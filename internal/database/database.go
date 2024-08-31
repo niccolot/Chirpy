@@ -47,7 +47,7 @@ func (db *DB) CreateChirp(body string) (Chirp, error) {
 
 	c := Chirp{
 		Body: body,
-		Id: string(chirps+1),
+		Id: chirps+1,
 	}
 
 	return c, nil
@@ -105,7 +105,7 @@ func (db *DB) GetChirps() ([]Chirp, error) {
 
 	chirpsSlice := make([]Chirp, len)
 	for i, chirp := range dbStruct.Chirps {
-		chirpsSlice[i] = chirp
+		chirpsSlice[i-1] = chirp
 	}
 
 	sort.Slice(chirpsSlice, func(i, j int) bool {
@@ -146,9 +146,13 @@ func (db *DB) WriteDB(dbStructure *DBStructure) error {
 		return fmt.Errorf("failed to marshal map: %v", err)
 	}
 
-	path := "/home/nico/repos/Chirpy/" + db.path
+	cwd , err := os.Getwd()
+	if err != nil {
+		return err
+	} 
+
+	path := cwd + "/" + db.path
 	dbFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	
 	if err != nil {
 		return err
 	}
@@ -156,8 +160,6 @@ func (db *DB) WriteDB(dbStructure *DBStructure) error {
 	defer dbFile.Close()
 	_, err = dbFile.Write(jsonData)
 	if err != nil {
-		fmt.Println("pippo")
-
 		return fmt.Errorf("failed to write to file: %w", err)
 	}
 
