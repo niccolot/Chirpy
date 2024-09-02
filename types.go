@@ -27,6 +27,7 @@ type request struct {
 
 type errResponse struct {
 	Error string `json:"error"`
+	StatusCode int `json:"status code"`
 }
 
 type succesfullResponse struct {

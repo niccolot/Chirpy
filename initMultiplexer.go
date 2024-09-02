@@ -15,4 +15,5 @@ func initMultiplexer(mux *http.ServeMux, cfg *apiConfig, db *database.DB) {
     })
     mux.HandleFunc("POST /api/chirps", postChirpHandlerWrapped(db))
     mux.HandleFunc("GET /api/chirps", getChirpsHandlerWrapped(db))
+    mux.HandleFunc("GET /api/chirps/{id}", getChirpIDHandlerWrapped(db))
 } 

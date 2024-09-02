@@ -3,56 +3,28 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"log"
 	"encoding/json"
+	"github.com/niccolot/Chirpy/internal/errors"
 )
 
 
-func respondWithError(w *http.ResponseWriter, err error) {
-	(*w).WriteHeader(500)
-	errResp := errResponse{
-		Error: fmt.Errorf("something went wrong, %w", err).Error(),
-	}
-
-	dat, err := json.Marshal(errResp)
-	if err != nil {
-		log.Printf("Error marshalling JSON: %s", err)
-		return
-	}
-
-	(*w).Write(dat)
-}
-
-func respondWithCodedError(w *http.ResponseWriter, err error) {
-	//(*w).WriteHeader(500)
-	//errCode := err.StatusCode
-	errResp := errResponse{
-		Error: fmt.Errorf("something went wrong, %w", err).Error(),
-	}
-
-	dat, err := json.Marshal(errResp)
-	if err != nil {
-		log.Printf("Error marshalling JSON: %s", err)
-		return
-	}
-
-	(*w).Write(dat)
-}
-
-func respondWithSuccess(w *http.ResponseWriter, r *request) {
-	succResp := succesfullResponse{
-		CleanedBody: r.Body,
-	}
+func respondWithError(w *http.ResponseWriter, err *errors.CodedError) {
+	message := err.Message
+	code := err.StatusCode
 	
-	dat, err := json.Marshal(succResp)
-	if err != nil {
-		(*w).WriteHeader(500)
-		log.Printf("Error marshalling JSON: %s", err)
+	errResp := errResponse{
+		Error: message,
+		StatusCode: code,
+	}
+
+	fmt.Printf("error occurred: %s, status code: %d", message, code)
+	(*w).WriteHeader(code)
+	dat, e := json.Marshal(errResp)
+	if e != nil {
+		fmt.Printf("Error marshalling JSON: %s", e)
 		return
 	}
 
-	(*w).WriteHeader(200)
-	(*w).Header().Set("Content-Type", "application/json")
 	(*w).Write(dat)
 }
 
@@ -65,7 +37,7 @@ func respSuccesfullPost(w *http.ResponseWriter, body string, id int) {
 	dat, err := json.Marshal(succResp)
 	if err != nil {
 		(*w).WriteHeader(500)
-		log.Printf("Error marshalling JSON: %s", err)
+		fmt.Printf("Error marshalling JSON: %s", err)
 		return
 	}
 

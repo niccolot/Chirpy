@@ -10,16 +10,15 @@ import (
 )
 
 
-func NewDB(path string) (*DB, error) {
+func NewDB(path string) (*DB, *errors.CodedError) {
 	_, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		file, err := os.Create(path)
 		if err != nil {
 			e := errors.CodedError{
-				Message:   fmt.Errorf("%w", err).Error(),
+				Message:   fmt.Errorf("failed to create database file %w, function: %s", err, errors.GetFunctionName()).Error(),
 				StatusCode: 500,
 			}
-			fmt.Println("error creating database")
 			return nil, &e
 		}
 		defer file.Close()
@@ -34,15 +33,23 @@ func NewDB(path string) (*DB, error) {
 	return db, nil
 }
 
-func (db *DB) CreateChirp(body string) (Chirp, error) {
+func (db *DB) CreateChirp(body string) (Chirp, *errors.CodedError) {
 	err := validateChirp(&body)
 	if err != nil {
-		return Chirp{}, err
+		e := errors.CodedError{
+			Message:   fmt.Errorf("failed to validate chirp: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return Chirp{}, &e
 	}
 
-	chirps, err := db.GetDBLength()
-	if err != nil {
-		return Chirp{}, err
+	chirps, errSize := db.GetDBLength()
+	if errSize != nil {
+		e := errors.CodedError{
+			Message:   fmt.Errorf("failed to get database size: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return Chirp{}, &e
 	}
 
 	c := Chirp{
@@ -53,23 +60,26 @@ func (db *DB) CreateChirp(body string) (Chirp, error) {
 	return c, nil
 }
 
-func (db *DB) GetDBLength() (int, error) {
+func (db *DB) GetDBLength() (int, *errors.CodedError) {
 	dbStruct, err := db.LoadDB()
 	if err != nil {
-		return 0, err
+		e := errors.CodedError{
+			Message:   fmt.Errorf("error reading database file: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return 0, &e
 	}
 
 	return len(dbStruct.Chirps), nil
 }
 
-func (db *DB) LoadDB() (DBStructure, error) {
+func (db *DB) LoadDB() (DBStructure, *errors.CodedError) {
 	fileContent, err := os.ReadFile(db.path)
 	if err != nil {
 		e := errors.CodedError{
-			Message:   fmt.Errorf("%w", err).Error(),
+			Message:   fmt.Errorf("error reading database file: %w, function: %s", err, errors.GetFunctionName()).Error(),
 			StatusCode: 500,
 		}
-		fmt.Println("Error reading  database file:", err)
 		return GetDBStruct(), &e
 	}
 
@@ -82,25 +92,32 @@ func (db *DB) LoadDB() (DBStructure, error) {
 	err = json.Unmarshal(fileContent, &dbStruct)
 	if err != nil {
 		e := errors.CodedError{
-			Message:   fmt.Errorf("%w", err).Error(),
+			Message:   fmt.Errorf("error unmarshaling json: %w, function: %s", err, errors.GetFunctionName()).Error(),
 			StatusCode: 500,
 		}
-		fmt.Println("Error parsing JSON:", err)
 		return GetDBStruct(), &e
 	}
 
 	return dbStruct, nil
 }
 
-func (db *DB) GetChirps() ([]Chirp, error) {
+func (db *DB) GetChirps() ([]Chirp, *errors.CodedError) {
 	dbStruct, err := db.LoadDB()
 	if err != nil {
-		return nil, err
+		e := errors.CodedError{
+			Message: fmt.Errorf("failed to load database file: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return nil, &e
 	}
 
 	len, err := db.GetDBLength()
 	if err != nil {
-		return nil, err
+		e := errors.CodedError{
+			Message: fmt.Errorf("failed to get database size: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return nil, &e
 	}
 
 	chirpsSlice := make([]Chirp, len)
@@ -115,52 +132,92 @@ func (db *DB) GetChirps() ([]Chirp, error) {
 	return chirpsSlice, nil
 }
 
-func (db *DB) ensureDB() error {
+func (db *DB) GetChirpID(id int) (Chirp, *errors.CodedError) {
+	dbStruct, err := db.LoadDB()
+	if err != nil {
+		e := errors.CodedError{
+			Message: fmt.Errorf("failed to load database file: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return Chirp{}, &e
+	}
+
+	chirp, ok := dbStruct.Chirps[id]
+	if !ok {
+		e := errors.CodedError{
+			Message: "Chirp not found",
+			StatusCode: 404,
+		}
+		return Chirp{}, &e
+	}
+
+	return chirp, nil
+}
+
+func (db *DB) ensureDB() *errors.CodedError {
 	_, err := os.Stat(db.path)
 	if os.IsNotExist(err) {
 		file, err := os.Create(db.path)
 		if err != nil {
 			e := errors.CodedError{
-				Message:   fmt.Errorf("%w", err).Error(),
+				Message:   fmt.Errorf("failed to create databse file: %w, function: %s", err, errors.GetFunctionName()).Error(),
 				StatusCode: 500,
 			}
-			fmt.Println("error creating database")
 			return &e
 		}
 		defer file.Close()
 		fmt.Println("Database file created:", db.path)
-	} else {
-		fmt.Println("Database file already exists:", db.path)
-	}
+	} 
 
 	return nil
 }
 
-func (db *DB) WriteDB(dbStructure *DBStructure) error {
+func (db *DB) WriteDB(dbStructure *DBStructure) *errors.CodedError {
 	err := db.ensureDB()
 	if err != nil {
-		return err
-	}
-	jsonData, err := json.MarshalIndent(dbStructure, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal map: %v", err)
+		e := errors.CodedError{
+			Message: fmt.Errorf("%w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return &e
 	}
 
-	cwd , err := os.Getwd()
-	if err != nil {
-		return err
+	jsonData, errMarshal := json.MarshalIndent(dbStructure, "", "  ")
+	if errMarshal != nil {
+		e := errors.CodedError{
+			Message: fmt.Errorf("failed to marshal map: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return &e
+	}
+
+	cwd , errGetwd := os.Getwd()
+	if errGetwd != nil {
+		e := errors.CodedError{
+			Message: fmt.Errorf("failed to get working directory: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return &e
 	} 
 
 	path := cwd + "/" + db.path
-	dbFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return err
+	dbFile, errOpen := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if errOpen != nil {
+		e := errors.CodedError{
+			Message: fmt.Errorf("failed to open database file: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return &e
 	}
 
 	defer dbFile.Close()
-	_, err = dbFile.Write(jsonData)
-	if err != nil {
-		return fmt.Errorf("failed to write to file: %w", err)
+	_, errWrite := dbFile.Write(jsonData)
+	if errWrite != nil {
+		e := errors.CodedError{
+			Message: fmt.Errorf("failed to write to file: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return &e
 	}
 
 	return nil
