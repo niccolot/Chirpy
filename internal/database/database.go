@@ -43,10 +43,10 @@ func (db *DB) CreateChirp(body string) (Chirp, *errors.CodedError) {
 		return Chirp{}, &e
 	}
 
-	chirps, errSize := db.GetDBLength()
+	chirps, errSize := db.GetNumChirps()
 	if errSize != nil {
 		e := errors.CodedError{
-			Message:   fmt.Errorf("failed to get database size: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			Message:   fmt.Errorf("failed to get database size: %w, function: %s", errSize, errors.GetFunctionName()).Error(),
 			StatusCode: 500,
 		}
 		return Chirp{}, &e
@@ -60,45 +60,22 @@ func (db *DB) CreateChirp(body string) (Chirp, *errors.CodedError) {
 	return c, nil
 }
 
-func (db *DB) GetDBLength() (int, *errors.CodedError) {
-	dbStruct, err := db.LoadDB()
-	if err != nil {
+func (db *DB) CreateUser(email string) (User, *errors.CodedError) {
+	chirps, errSize := db.GetNumUsers()
+	if errSize != nil {
 		e := errors.CodedError{
-			Message:   fmt.Errorf("error reading database file: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			Message:   fmt.Errorf("failed to get database size: %w, function: %s", errSize, errors.GetFunctionName()).Error(),
 			StatusCode: 500,
 		}
-		return 0, &e
+		return User{}, &e
 	}
 
-	return len(dbStruct.Chirps), nil
-}
-
-func (db *DB) LoadDB() (DBStructure, *errors.CodedError) {
-	fileContent, err := os.ReadFile(db.path)
-	if err != nil {
-		e := errors.CodedError{
-			Message:   fmt.Errorf("error reading database file: %w, function: %s", err, errors.GetFunctionName()).Error(),
-			StatusCode: 500,
-		}
-		return GetDBStruct(), &e
+	u := User{
+		Email: email,
+		Id: chirps+1,
 	}
 
-	if len(fileContent) == 0 {
-		return GetDBStruct(), nil
-	}
-
-	dbStruct := GetDBStruct()
-
-	err = json.Unmarshal(fileContent, &dbStruct)
-	if err != nil {
-		e := errors.CodedError{
-			Message:   fmt.Errorf("error unmarshaling json: %w, function: %s", err, errors.GetFunctionName()).Error(),
-			StatusCode: 500,
-		}
-		return GetDBStruct(), &e
-	}
-
-	return dbStruct, nil
+	return u, nil
 }
 
 func (db *DB) GetChirps() ([]Chirp, *errors.CodedError) {
@@ -111,7 +88,7 @@ func (db *DB) GetChirps() ([]Chirp, *errors.CodedError) {
 		return nil, &e
 	}
 
-	len, err := db.GetDBLength()
+	len, err := db.GetNumChirps()
 	if err != nil {
 		e := errors.CodedError{
 			Message: fmt.Errorf("failed to get database size: %w, function: %s", err, errors.GetFunctionName()).Error(),
@@ -152,6 +129,60 @@ func (db *DB) GetChirpID(id int) (Chirp, *errors.CodedError) {
 	}
 
 	return chirp, nil
+}
+
+func (db *DB) GetNumChirps() (int, *errors.CodedError) {
+	dbStruct, err := db.LoadDB()
+	if err != nil {
+		e := errors.CodedError{
+			Message:   fmt.Errorf("error reading database file: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return 0, &e
+	}
+
+	return len(dbStruct.Chirps), nil
+}
+
+func (db *DB) GetNumUsers() (int, *errors.CodedError) {
+	dbStruct, err := db.LoadDB()
+	if err != nil {
+		e := errors.CodedError{
+			Message:   fmt.Errorf("error reading database file: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return 0, &e
+	}
+
+	return len(dbStruct.Users), nil
+}
+
+func (db *DB) LoadDB() (DBStructure, *errors.CodedError) {
+	fileContent, err := os.ReadFile(db.path)
+	if err != nil {
+		e := errors.CodedError{
+			Message:   fmt.Errorf("error reading database file: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return GetDBStruct(), &e
+	}
+
+	if len(fileContent) == 0 {
+		return GetDBStruct(), nil
+	}
+
+	dbStruct := GetDBStruct()
+
+	err = json.Unmarshal(fileContent, &dbStruct)
+	if err != nil {
+		e := errors.CodedError{
+			Message:   fmt.Errorf("error unmarshaling json: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return GetDBStruct(), &e
+	}
+
+	return dbStruct, nil
 }
 
 func (db *DB) ensureDB() *errors.CodedError {
@@ -226,5 +257,6 @@ func (db *DB) WriteDB(dbStructure *DBStructure) *errors.CodedError {
 func GetDBStruct() DBStructure {
 	return DBStructure{
 		make(map[int]Chirp),
+		make(map[int]User),
 	}
 }

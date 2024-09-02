@@ -47,7 +47,7 @@ func postChirpHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *htt
 	postChirpHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		decoder := json.NewDecoder(r.Body)
-		req := request{}
+		req := chirpPostRequest{}
 		errDecode := decoder.Decode(&req)
 		if errDecode != nil {
 			e := errors.CodedError{
@@ -69,7 +69,7 @@ func postChirpHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *htt
 			return 
 		}
 
-		len, err := db.GetDBLength()
+		len, err := db.GetNumChirps()
 		if err != nil {
 			respondWithError(&w, err)
 			return 
@@ -83,7 +83,7 @@ func postChirpHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *htt
 			return 
 		}
 		
-		respSuccesfullPost(&w, req.Body, id)
+		respSuccesfullChirpPost(&w, req.Body, id)
 	}
 	
 	return postChirpHandler
@@ -149,4 +149,50 @@ func getChirpIDHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *ht
 	}
 
 	return getChirpIDHandler
+}
+
+func postUserHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http.Request) {
+	postUserHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		decoder := json.NewDecoder(r.Body)
+		req := userPostRequest{}
+		errDecode := decoder.Decode(&req)
+		if errDecode != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to decode request: %w, function: %s", errDecode, errors.GetFunctionName()).Error(),
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		user, err := db.CreateUser(req.Email)
+		if err != nil {
+			respondWithError(&w, err)
+			return 
+		}
+		
+		dbStruct, err := db.LoadDB()
+		if err != nil {
+			respondWithError(&w, err)
+			return 
+		}
+
+		len, err := db.GetNumUsers()
+		if err != nil {
+			respondWithError(&w, err)
+			return 
+		}
+
+		id := len+1
+		dbStruct.Users[id] = user
+		errWrite := db.WriteDB(&dbStruct)
+		if errWrite != nil {
+			respondWithError(&w, errWrite)
+			return 
+		}
+		
+		respSuccesfullUserPost(&w, req.Email, id)
+	}
+
+	return postUserHandler
 }

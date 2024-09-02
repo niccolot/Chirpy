@@ -21,8 +21,12 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	return handler
 }
 
-type request struct {
+type chirpPostRequest struct {
 	Body string `json:"body"`
+}
+
+type userPostRequest struct {
+	Email string `json:"email"`
 }
 
 type errResponse struct {
@@ -30,7 +34,12 @@ type errResponse struct {
 	StatusCode int `json:"status code"`
 }
 
-type succesfullResponse struct {
+type succesfullChirpPostResponse struct {
 	Id int `json:"id"`
 	CleanedBody string `json:"body"`
+}
+
+type succesfullUserPostResponse struct {
+	Id int `json:"id"`
+	Email string `json:"email"`
 }
