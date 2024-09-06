@@ -64,6 +64,24 @@ func respSuccesfullUserPost(w *http.ResponseWriter, email string, id int) {
 	(*w).Write(dat)
 }
 
+func respSuccessfullLoginPost(w *http.ResponseWriter, email string, id int) {
+	succResp := succesfullLoginPostResponse{
+		Id: id,
+		Email: email,
+	}
+
+	dat, err := json.Marshal(succResp)
+	if err != nil {
+		(*w).WriteHeader(500)
+		fmt.Printf("Error marshalling JSON: %s", err)
+		return
+	}
+
+	(*w).WriteHeader(200)
+	(*w).Header().Set("Content-Type", "application/json")
+	(*w).Write(dat)
+}
+
 func respSuccesfullGet(w *http.ResponseWriter, dat *[]byte) {
 
 	(*w).WriteHeader(200)

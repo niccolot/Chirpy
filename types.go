@@ -26,6 +26,12 @@ type chirpPostRequest struct {
 }
 
 type userPostRequest struct {
+	Password string `json:"password"`
+	Email string `json:"email"`
+}
+
+type loginPostRequest struct {
+	Password string `json:"password"`
 	Email string `json:"email"`
 }
 
@@ -40,6 +46,11 @@ type succesfullChirpPostResponse struct {
 }
 
 type succesfullUserPostResponse struct {
+	Id int `json:"id"`
+	Email string `json:"email"`
+}
+
+type succesfullLoginPostResponse struct {
 	Id int `json:"id"`
 	Email string `json:"email"`
 }

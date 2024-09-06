@@ -7,8 +7,10 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+
 	"github.com/niccolot/Chirpy/internal/database"
 	"github.com/niccolot/Chirpy/internal/errors"
+	"golang.org/x/crypto/bcrypt"
 )
 
 
@@ -165,7 +167,7 @@ func postUserHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http
 			return 
 		}
 
-		user, err := db.CreateUser(req.Email)
+		user, err := db.CreateUser(req.Email, req.Password)
 		if err != nil {
 			respondWithError(&w, err)
 			return 
@@ -195,4 +197,55 @@ func postUserHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http
 	}
 
 	return postUserHandler
+}
+
+func postLoginHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http.Request) {
+	postLoginHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		decoder := json.NewDecoder(r.Body)
+		req := loginPostRequest{}
+		errDecode := decoder.Decode(&req)
+		if errDecode != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to decode request: %w, function: %s", errDecode, errors.GetFunctionName()).Error(),
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		dbStruct, err := db.LoadDB()
+		if err != nil {
+			respondWithError(&w, err)
+			return 
+		}
+
+		found, userIdx, errSearchPtr := db.SearchUserEmail(req.Email)
+		if errSearchPtr != nil {
+			respondWithError(&w, errSearchPtr)
+			return 
+		}
+
+		if !found {
+			e := errors.CodedError{
+				Message: fmt.Sprintf("user '%s' not found", req.Email),
+				StatusCode: 404,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+
+		errCompPass := bcrypt.CompareHashAndPassword([]byte(dbStruct.Users[userIdx].Password), []byte(req.Password))
+		if errCompPass != nil {
+			e := errors.CodedError{
+				Message: "unauthorized access",
+				StatusCode: 401,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		respSuccessfullLoginPost(&w, req.Email, userIdx)
+	}
+
+	return postLoginHandler
 }

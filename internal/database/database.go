@@ -1,52 +1,29 @@
 package database
 
 import (
-	"sync"
 	"os"
 	"fmt"
 	"encoding/json"
 	"sort"
+	"golang.org/x/crypto/bcrypt"
 	"github.com/niccolot/Chirpy/internal/errors"
 )
 
-
-func NewDB(path string) (*DB, *errors.CodedError) {
-	_, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		file, err := os.Create(path)
-		if err != nil {
-			e := errors.CodedError{
-				Message:   fmt.Errorf("failed to create database file %w, function: %s", err, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
-			}
-			return nil, &e
-		}
-		defer file.Close()
-		fmt.Println("Database file created:", path)
-	} 
-
-	db := &DB{
-		path: path,
-		mux: &sync.RWMutex{},
-	}
-
-	return db, nil
-}
 
 func (db *DB) CreateChirp(body string) (Chirp, *errors.CodedError) {
 	err := validateChirp(&body)
 	if err != nil {
 		e := errors.CodedError{
-			Message:   fmt.Errorf("failed to validate chirp: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			Message: fmt.Errorf("failed to validate chirp: %w, function: %s", err, errors.GetFunctionName()).Error(),
 			StatusCode: 500,
 		}
 		return Chirp{}, &e
 	}
 
-	chirps, errSize := db.GetNumChirps()
+	numChirps, errSize := db.GetNumChirps()
 	if errSize != nil {
 		e := errors.CodedError{
-			Message:   fmt.Errorf("failed to get database size: %w, function: %s", errSize, errors.GetFunctionName()).Error(),
+			Message: fmt.Errorf("failed to get database size: %w, function: %s", errSize, errors.GetFunctionName()).Error(),
 			StatusCode: 500,
 		}
 		return Chirp{}, &e
@@ -54,17 +31,27 @@ func (db *DB) CreateChirp(body string) (Chirp, *errors.CodedError) {
 
 	c := Chirp{
 		Body: body,
-		Id: chirps+1,
+		Id: numChirps+1,
 	}
 
 	return c, nil
 }
 
-func (db *DB) CreateUser(email string) (User, *errors.CodedError) {
-	chirps, errSize := db.GetNumUsers()
+func (db *DB) CreateUser(email string, password string) (User, *errors.CodedError) {
+	numUsers, errSize := db.GetNumUsers()
 	if errSize != nil {
 		e := errors.CodedError{
-			Message:   fmt.Errorf("failed to get database size: %w, function: %s", errSize, errors.GetFunctionName()).Error(),
+			Message: fmt.Errorf("failed to get database size: %w, function: %s", errSize, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return User{}, &e
+	}
+
+	password_bytes := []byte(password)
+	hash, errHashing := bcrypt.GenerateFromPassword(password_bytes, bcrypt.DefaultCost)
+	if errHashing != nil {
+		e := errors.CodedError{
+			Message: fmt.Errorf("error hashing password: %w, function: %s", errHashing, errors.GetFunctionName()).Error(),
 			StatusCode: 500,
 		}
 		return User{}, &e
@@ -72,7 +59,8 @@ func (db *DB) CreateUser(email string) (User, *errors.CodedError) {
 
 	u := User{
 		Email: email,
-		Id: chirps+1,
+		Password: string(hash),
+		Id: numUsers+1,
 	}
 
 	return u, nil
@@ -254,9 +242,25 @@ func (db *DB) WriteDB(dbStructure *DBStructure) *errors.CodedError {
 	return nil
 }
 
-func GetDBStruct() DBStructure {
-	return DBStructure{
-		make(map[int]Chirp),
-		make(map[int]User),
+func (db *DB) SearchUserEmail(email string) (bool, int, *errors.CodedError) {
+	dbStruct, err := db.LoadDB()
+	if err != nil {
+		e := errors.CodedError{
+			Message: fmt.Errorf("failed loading database: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		} 
+		return false, 0, &e
 	}
+
+	found := false
+	var userIdx int
+	for i, user := range(dbStruct.Users) {
+		if user.Email == email {
+			found = true
+			userIdx = i
+			break
+		}
+	}
+
+	return found, userIdx, nil
 }

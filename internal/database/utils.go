@@ -2,9 +2,35 @@ package database
 
 import (
 	"strings"
+	"os"
+	"fmt"
+	"sync"
 	"github.com/niccolot/Chirpy/internal/errors"
 )
 
+
+func NewDB(path string) (*DB, *errors.CodedError) {
+	_, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		file, err := os.Create(path)
+		if err != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to create database file %w, function: %s", err, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			return nil, &e
+		}
+		defer file.Close()
+		fmt.Println("Database file created:", path)
+	} 
+
+	db := &DB{
+		path: path,
+		mux: &sync.RWMutex{},
+	}
+
+	return db, nil
+}
 
 func validateChirp(body *string) error {
 	maxChirpLength := 140
@@ -38,4 +64,11 @@ func cleanProfanity(body *string) {
 	}
 
 	*body = strings.Join(words, " ")
+}
+
+func GetDBStruct() DBStructure {
+	return DBStructure{
+		make(map[int]Chirp),
+		make(map[int]User),
+	}
 }
