@@ -4,15 +4,21 @@ import (
 	"net/http"
 	"sync"
     "fmt"
+    "os"
+    "github.com/joho/godotenv"
     "github.com/niccolot/Chirpy/internal/database"
 )
 
 func main() {
+    godotenv.Load()
+    jwtSecret := os.Getenv("JWT_SECRET")
+
     mux := http.NewServeMux()
     
     cfg := apiConfig{
         FileserverHits: 0,
         mu: &sync.Mutex{},
+        JwtSecret: jwtSecret,
     }
 
     db, err := database.NewDB("database.json")

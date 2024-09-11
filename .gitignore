@@ -1,3 +1,5 @@
 out
 database.json
 todo.txt
+.env
+*.html

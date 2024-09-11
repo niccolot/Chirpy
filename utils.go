@@ -17,7 +17,7 @@ func respondWithError(w *http.ResponseWriter, err *errors.CodedError) {
 		StatusCode: code,
 	}
 
-	fmt.Printf("error occurred: %s, status code: %d", message, code)
+	fmt.Printf("error occurred: %s, status code: %d\n", message, code)
 	(*w).WriteHeader(code)
 	dat, e := json.Marshal(errResp)
 	if e != nil {
@@ -64,10 +64,29 @@ func respSuccesfullUserPost(w *http.ResponseWriter, email string, id int) {
 	(*w).Write(dat)
 }
 
-func respSuccessfullLoginPost(w *http.ResponseWriter, email string, id int) {
+func respSuccesfullUserPut(w *http.ResponseWriter, email string, id int) {
+	succResp := succesfullUserPutResponse{
+		Id: id,
+		Email: email,
+	}
+	
+	dat, err := json.Marshal(succResp)
+	if err != nil {
+		(*w).WriteHeader(500)
+		fmt.Printf("Error marshalling JSON: %s", err)
+		return
+	}
+
+	(*w).WriteHeader(200)
+	(*w).Header().Set("Content-Type", "application/json")
+	(*w).Write(dat)
+}
+
+func respSuccessfullLoginPost(w *http.ResponseWriter, email string, id int, signedToken string) {
 	succResp := succesfullLoginPostResponse{
 		Id: id,
 		Email: email,
+		Token: signedToken,
 	}
 
 	dat, err := json.Marshal(succResp)

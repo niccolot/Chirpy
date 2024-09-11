@@ -1,9 +1,9 @@
 package database
 
 import (
-	"strings"
-	"os"
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 	"github.com/niccolot/Chirpy/internal/errors"
 )
@@ -21,7 +21,7 @@ func NewDB(path string) (*DB, *errors.CodedError) {
 			return nil, &e
 		}
 		defer file.Close()
-		fmt.Println("Database file created:", path)
+		fmt.Printf("Database file created: %s\n", path)
 	} 
 
 	db := &DB{
@@ -36,7 +36,7 @@ func validateChirp(body *string) error {
 	maxChirpLength := 140
 	if len(*body) > maxChirpLength {
 		e := errors.CodedError{
-			Message:   "Error: chirp is too long",
+			Message:   "Error: chirp is too long\n",
 			StatusCode: 400,
 		}
 		return &e
@@ -70,5 +70,6 @@ func GetDBStruct() DBStructure {
 	return DBStructure{
 		make(map[int]Chirp),
 		make(map[int]User),
+		&sync.RWMutex{},
 	}
 }

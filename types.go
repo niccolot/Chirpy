@@ -8,6 +8,7 @@ import (
 type apiConfig struct {
     FileserverHits int
 	mu *sync.Mutex
+	JwtSecret string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {	
@@ -30,9 +31,15 @@ type userPostRequest struct {
 	Email string `json:"email"`
 }
 
+type userPutRequest struct {
+	Password string `json:"password"`
+	Email string `json:"email"`
+}
+
 type loginPostRequest struct {
 	Password string `json:"password"`
 	Email string `json:"email"`
+	ExpiresInSeconds int `json:"expires_in_seconds"`
 }
 
 type errResponse struct {
@@ -50,7 +57,13 @@ type succesfullUserPostResponse struct {
 	Email string `json:"email"`
 }
 
+type succesfullUserPutResponse struct {
+	Id int `json:"id"`
+	Email string `json:"email"`
+}
+
 type succesfullLoginPostResponse struct {
 	Id int `json:"id"`
 	Email string `json:"email"`
+	Token string `json:"token"`
 }

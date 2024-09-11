@@ -7,7 +7,9 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-
+	"strings"
+	"time"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/niccolot/Chirpy/internal/database"
 	"github.com/niccolot/Chirpy/internal/errors"
 	"golang.org/x/crypto/bcrypt"
@@ -199,7 +201,7 @@ func postUserHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http
 	return postUserHandler
 }
 
-func postLoginHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http.Request) {
+func postLoginHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	postLoginHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		decoder := json.NewDecoder(r.Body)
@@ -233,7 +235,7 @@ func postLoginHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *htt
 			respondWithError(&w, &e)
 			return
 		}
-
+		
 		errCompPass := bcrypt.CompareHashAndPassword([]byte(dbStruct.Users[userIdx].Password), []byte(req.Password))
 		if errCompPass != nil {
 			e := errors.CodedError{
@@ -244,8 +246,90 @@ func postLoginHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *htt
 			return 
 		}
 
-		respSuccessfullLoginPost(&w, req.Email, userIdx)
+		var expiresInSeconds int
+		if req.ExpiresInSeconds == 0 || req.ExpiresInSeconds > 24*60*60{
+			expiresInSeconds = 24*60*60
+		} else {
+			expiresInSeconds = req.ExpiresInSeconds
+		}
+		
+		currTime := time.Now().UTC()
+		token := jwt.NewWithClaims(
+			jwt.SigningMethodHS256,
+			jwt.RegisteredClaims{
+				Issuer: "chirpy",
+				IssuedAt: jwt.NewNumericDate(currTime),
+				ExpiresAt: jwt.NewNumericDate(currTime.Add(time.Duration(expiresInSeconds)*time.Second)),
+				Subject: strconv.Itoa(userIdx),
+			},
+		)
+
+		signedToken, errSign := token.SignedString([]byte(cfg.JwtSecret))
+		if errSign != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to sign jwt: %w, function: %s", errSign, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+
+		respSuccessfullLoginPost(&w, req.Email, userIdx, signedToken)
 	}
 
 	return postLoginHandler
+}
+
+func putUserhandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	putUserHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		decoder := json.NewDecoder(r.Body)
+		req := userPutRequest{}
+		errDecode := decoder.Decode(&req)
+		if errDecode != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to decode request: %w, function: %s", errDecode, errors.GetFunctionName()).Error(),
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		tokenObjPtr, errParseToken := jwt.ParseWithClaims(token, &jwt.RegisteredClaims{}, func(*jwt.Token) (interface{}, error) {
+			return []byte(cfg.JwtSecret), nil
+		})
+		if errParseToken != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("invalid token: %w", errParseToken).Error(),
+				StatusCode: 401,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+
+		userIdString, errGetID := tokenObjPtr.Claims.(*jwt.RegisteredClaims).GetSubject()		
+		
+		if errGetID != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("error getting user id: %w, function: %s", errGetID, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+		
+		userId, errConversion := strconv.Atoi(userIdString)
+		if errConversion != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to convert userId from string to int: %w, function: %s", errConversion, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+		db.UpdateUser(userId, req.Email, req.Password)
+		respSuccesfullUserPut(&w, req.Email, userId)
+	}
+
+	return putUserHandler
 }
