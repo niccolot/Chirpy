@@ -47,6 +47,23 @@ func (db *DB) CreateUser(email string, password string) (User, *errors.CodedErro
 		return User{}, &e
 	}
 
+	found, _, errSearch := db.SearchUserEmail(email)
+	if errSearch != nil {
+		e := errors.CodedError{
+			Message: fmt.Errorf("failed to validate user email: %w, function: %s", errSearch, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return User{}, &e
+	}
+
+	if found {
+		e := errors.CodedError{
+			Message: fmt.Sprintf("user '%s' already registered", email),
+			StatusCode: 409,
+		}
+		return User{}, &e
+	}
+
 	password_bytes := []byte(password)
 	hash, errHashing := bcrypt.GenerateFromPassword(password_bytes, bcrypt.DefaultCost)
 	if errHashing != nil {
@@ -89,7 +106,7 @@ func (db *DB) UpdateUser(userId int, email string, password string) (Updateduser
 		}
 		return Updateduser{}, &e
 	}
-	
+
 	user.Password = string(hash)
 	dbStruct.Users[userId] = user
 	db.WriteDB(&dbStruct)
