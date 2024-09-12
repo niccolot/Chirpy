@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"crypto/rand"
+	"encoding/hex"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/niccolot/Chirpy/internal/database"
 	"github.com/niccolot/Chirpy/internal/errors"
@@ -247,8 +249,8 @@ func postLoginHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 		}
 
 		var expiresInSeconds int
-		if req.ExpiresInSeconds == 0 || req.ExpiresInSeconds > 24*60*60{
-			expiresInSeconds = 24*60*60
+		if req.ExpiresInSeconds == 0 || req.ExpiresInSeconds > 60*60{
+			expiresInSeconds = 60*60 // max duration of jwt is 1 hour
 		} else {
 			expiresInSeconds = req.ExpiresInSeconds
 		}
@@ -274,7 +276,39 @@ func postLoginHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 			return
 		}
 
-		respSuccessfullLoginPost(&w, req.Email, userIdx, signedToken)
+		randomSlice := make([]byte, 32)
+		_, errRand := rand.Read(randomSlice)
+		if errRand != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to generate refresh token: %w, function: %s", errSign, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+		
+		refreshToken := hex.EncodeToString(randomSlice)
+		user := database.User{
+			Id: userIdx,
+			Email: req.Email,
+			Password: req.Password,
+			RefreshToken: refreshToken,
+
+			// refresh token expires after 60 days and the date is stored as ISO 8601 format
+			RefreshTokenExpiresAt: currTime.Add(60 * 24 * time.Hour).UTC().Format(time.RFC3339),
+		}
+		dbStruct.Users[userIdx] = user
+		errWriteRefreshExp := db.WriteDB(&dbStruct)
+		if errWriteRefreshExp != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to store refresh token expire time: %w, function: %s", errSign, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+
+		respSuccessfullLoginPost(&w, req.Email, userIdx, signedToken, refreshToken)
 	}
 
 	return postLoginHandler
@@ -308,7 +342,6 @@ func putUserhandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Response
 		}
 
 		userIdString, errGetID := tokenObjPtr.Claims.(*jwt.RegisteredClaims).GetSubject()		
-		
 		if errGetID != nil {
 			e := errors.CodedError{
 				Message: fmt.Errorf("error getting user id: %w, function: %s", errGetID, errors.GetFunctionName()).Error(),
@@ -327,9 +360,135 @@ func putUserhandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Response
 			respondWithError(&w, &e)
 			return 
 		}
+
 		db.UpdateUser(userId, req.Email, req.Password)
 		respSuccesfullUserPut(&w, req.Email, userId)
 	}
 
 	return putUserHandler
+}
+
+func postRefreshHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	postRefreshHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		refreshToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		dbStruct, errLoad := db.LoadDB()
+		if errLoad != nil {
+			respondWithError(&w, errLoad)
+			return 
+		}
+		
+		found := false
+		var userIdx int
+		for i, user := range(dbStruct.Users) {
+			if user.RefreshToken == refreshToken {
+				found = true
+				userIdx = i
+			}
+		}
+
+		if !found {
+			e := errors.CodedError{
+				Message: "refresh token does not exist",
+				StatusCode: 401,
+			}
+			respondWithError(&w, &e)
+			return
+		} 
+
+		expDate, errParse := time.Parse(time.RFC3339, dbStruct.Users[userIdx].RefreshTokenExpiresAt)
+		if errParse != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to parse expiration date: %w, function: %s", errParse, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+
+		if time.Now().UTC().After(expDate) {
+			e := errors.CodedError{
+				Message: "refresh token is expired",
+				StatusCode: 401,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+		
+		currTime := time.Now().UTC()
+		token := jwt.NewWithClaims(
+			jwt.SigningMethodHS256,
+			jwt.RegisteredClaims{
+				Issuer: "chirpy",
+				IssuedAt: jwt.NewNumericDate(currTime),
+
+				// new jwt expires after 1 hour
+				ExpiresAt: jwt.NewNumericDate(currTime.Add(time.Duration(60*60)*time.Second)),
+				Subject: strconv.Itoa(userIdx),
+			},
+		)
+
+		signedToken, errSign := token.SignedString([]byte(cfg.JwtSecret))
+		if errSign != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to sign jwt: %w, function: %s", errSign, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+
+		respondSuccesfullRefreshPost(&w, signedToken)
+	}
+
+	return postRefreshHandler
+}
+
+func postRevokeHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	postRevokeHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		refreshToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		dbStruct, errLoad := db.LoadDB()
+		if errLoad != nil {
+			respondWithError(&w, errLoad)
+			return 
+		}
+		
+		found := false
+		var userIdx int
+		for i, user := range(dbStruct.Users) {
+			if user.RefreshToken == refreshToken {
+				found = true
+				userIdx = i
+			}
+		}
+
+		if !found {
+			e := errors.CodedError{
+				Message: "refresh token does not exist",
+				StatusCode: 401,
+			}
+			respondWithError(&w, &e)
+			return
+		} 
+		
+		user := database.User{
+			Id: userIdx,
+			Email: dbStruct.Users[userIdx].Email,
+			Password: dbStruct.Users[userIdx].Password,
+			RefreshToken: "",
+			RefreshTokenExpiresAt: "",
+		}
+
+		dbStruct.Users[userIdx] = user
+		errWrite := db.WriteDB(&dbStruct)
+		if errWrite != nil {
+			respondWithError(&w, errWrite)
+			return
+		}
+
+		respSuccesfullRevokePost(&w)
+	}
+
+	return postRevokeHandler 
 }

@@ -66,5 +66,10 @@ type succesfullUserPutResponse struct {
 type succesfullLoginPostResponse struct {
 	Id int `json:"id"`
 	Email string `json:"email"`
+	JWT string `json:"token"`
+	RefreshToken string `json:"refresh_token"`
+}
+
+type succesfullRefreshPost struct {
 	Token string `json:"token"`
 }

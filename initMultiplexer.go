@@ -19,4 +19,6 @@ func initMultiplexer(mux *http.ServeMux, cfg *apiConfig, db *database.DB) {
     mux.HandleFunc("POST /api/users", postUserHandlerWrapped(db))
     mux.HandleFunc("PUT /api/users", putUserhandlerWrapped(db, cfg))
     mux.HandleFunc("POST /api/login", postLoginHandlerWrapped(db, cfg))
+    mux.HandleFunc("POST /api/refresh", postRefreshHandlerWrapped(db, cfg))
+    mux.HandleFunc("POST /api/revoke", postRevokeHandlerWrapped(db, cfg))
 } 

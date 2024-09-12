@@ -25,6 +25,8 @@ type User struct {
 	Id int `json:"id"`
 	Email string `json:"email"` 
 	Password string `json:"password"`
+	RefreshToken string `json:"refresh_token"`
+	RefreshTokenExpiresAt string `json:"refresh_token_expires_at"`
 }
 
 type Updateduser struct {
