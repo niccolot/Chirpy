@@ -49,7 +49,7 @@ func metricsHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.R
 	return metricsHandler
 }
 
-func postChirpHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http.Request) {
+func postChirpHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	postChirpHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		decoder := json.NewDecoder(r.Body)
@@ -62,12 +62,6 @@ func postChirpHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *htt
 			respondWithError(&w, &e)
 			return 
 		}
-
-		chirp, err := db.CreateChirp(req.Body)
-		if err != nil {
-			respondWithError(&w, err)
-			return 
-		}
 		
 		dbStruct, err := db.LoadDB()
 		if err != nil {
@@ -75,7 +69,46 @@ func postChirpHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *htt
 			return 
 		}
 
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		tokenObjPtr, errParseToken := jwt.ParseWithClaims(token, &jwt.RegisteredClaims{}, func(*jwt.Token) (interface{}, error) {
+			return []byte(cfg.JwtSecret), nil
+		})
+		if errParseToken != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("invalid token: %w", errParseToken).Error(),
+				StatusCode: 403,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+
+		userIdString, errGetID := tokenObjPtr.Claims.(*jwt.RegisteredClaims).GetSubject()		
+		if errGetID != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("error getting user id: %w, function: %s", errGetID, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+		
+		userId, errConversion := strconv.Atoi(userIdString)
+		if errConversion != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to convert userId from string to int: %w, function: %s", errConversion, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return 
+		}		
+
 		len, err := db.GetNumChirps()
+		if err != nil {
+			respondWithError(&w, err)
+			return 
+		}
+
+		chirp, err := db.CreateChirp(req.Body, userId)
 		if err != nil {
 			respondWithError(&w, err)
 			return 
@@ -89,7 +122,7 @@ func postChirpHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *htt
 			return 
 		}
 		
-		respSuccesfullChirpPost(&w, req.Body, id)
+		respSuccesfullChirpPost(&w, req.Body, id, userId)
 	}
 	
 	return postChirpHandler
@@ -115,7 +148,7 @@ func getChirpsHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *htt
 			return 
 		}
 		
-		respSuccesfullGet(&w, &dat)
+		respSuccesfullChirpGet(&w, &dat)
 	}
 
 	return getChirpsHandler
@@ -124,7 +157,6 @@ func getChirpsHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *htt
 func getChirpIDHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http.Request) {
 	getChirpIDHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
-
 		id, err := strconv.Atoi(r.PathValue("id"))
 		if err != nil {
 			e := errors.CodedError{
@@ -151,10 +183,82 @@ func getChirpIDHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *ht
 			return 
 		}
 
-		respSuccesfullGet(&w, &dat)		
+		respSuccesfullChirpGet(&w, &dat)		
 	}
 
 	return getChirpIDHandler
+}
+
+func deleteChirpIDHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	deleteChirpIDHandler := func(w http.ResponseWriter, r *http.Request) {
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		tokenObjPtr, errParseToken := jwt.ParseWithClaims(token, &jwt.RegisteredClaims{}, func(*jwt.Token) (interface{}, error) {
+			return []byte(cfg.JwtSecret), nil
+		})
+		if errParseToken != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("invalid token: %w", errParseToken).Error(),
+				StatusCode: 403,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+
+		userIdString, errGetID := tokenObjPtr.Claims.(*jwt.RegisteredClaims).GetSubject()		
+		if errGetID != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("error getting user id: %w, function: %s", errGetID, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+		
+		userId, errConversion := strconv.Atoi(userIdString)
+		if errConversion != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to convert userId from string to int: %w, function: %s", errConversion, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		chirpId, errChirpId := strconv.Atoi(r.PathValue("chirpId"))
+		if errChirpId != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to convert string to int: %w, function: %s", errChirpId, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+
+		dbStruct, errLoad := db.LoadDB()
+		if errLoad != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to load database: %w, function: %s", errGetID, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+
+		if dbStruct.Users[userId].Id != dbStruct.Chirps[chirpId].AuthorId {
+			e := errors.CodedError{
+				Message: "invalid token, permission denied",
+				StatusCode: 403,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+
+		delete(dbStruct.Chirps, chirpId)
+
+		respSuccesfullChirpDelete(&w)
+	}
+
+	return deleteChirpIDHandler
 }
 
 func postUserHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http.Request) {

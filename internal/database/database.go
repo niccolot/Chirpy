@@ -10,7 +10,7 @@ import (
 )
 
 
-func (db *DB) CreateChirp(body string) (Chirp, *errors.CodedError) {
+func (db *DB) CreateChirp(body string, authorid int) (Chirp, *errors.CodedError) {
 	err := validateChirp(&body)
 	if err != nil {
 		e := errors.CodedError{
@@ -32,6 +32,7 @@ func (db *DB) CreateChirp(body string) (Chirp, *errors.CodedError) {
 	chirp := Chirp{
 		Body: body,
 		Id: numChirps+1,
+		AuthorId: authorid,
 	}
 
 	return chirp, nil

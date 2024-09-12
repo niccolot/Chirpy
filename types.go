@@ -51,6 +51,7 @@ type errResponse struct {
 type succesfullChirpPostResponse struct {
 	Id int `json:"id"`
 	CleanedBody string `json:"body"`
+	AuthorId int `json:"author_id"`
 }
 
 type succesfullUserPostResponse struct {

@@ -13,7 +13,7 @@ func initMultiplexer(mux *http.ServeMux, cfg *apiConfig, db *database.DB) {
     mux.HandleFunc("/api/reset", func (w http.ResponseWriter, r *http.Request) {
         cfg.FileserverHits = 0
     })
-    mux.HandleFunc("POST /api/chirps", postChirpHandlerWrapped(db))
+    mux.HandleFunc("POST /api/chirps", postChirpHandlerWrapped(db, cfg))
     mux.HandleFunc("GET /api/chirps", getChirpsHandlerWrapped(db))
     mux.HandleFunc("GET /api/chirps/{id}", getChirpIDHandlerWrapped(db))
     mux.HandleFunc("POST /api/users", postUserHandlerWrapped(db))
@@ -21,4 +21,5 @@ func initMultiplexer(mux *http.ServeMux, cfg *apiConfig, db *database.DB) {
     mux.HandleFunc("POST /api/login", postLoginHandlerWrapped(db, cfg))
     mux.HandleFunc("POST /api/refresh", postRefreshHandlerWrapped(db, cfg))
     mux.HandleFunc("POST /api/revoke", postRevokeHandlerWrapped(db))
+    mux.HandleFunc("DELETE /api/chirps/{chirpId}", deleteChirpIDHandlerWrapped(db, cfg))
 } 

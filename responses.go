@@ -28,10 +28,11 @@ func respondWithError(w *http.ResponseWriter, err *errors.CodedError) {
 	(*w).Write(dat)
 }
 
-func respSuccesfullChirpPost(w *http.ResponseWriter, body string, id int) {
+func respSuccesfullChirpPost(w *http.ResponseWriter, body string, id int, authorId int) {
 	succResp := succesfullChirpPostResponse{
 		Id: id,
 		CleanedBody: body,
+		AuthorId: authorId,
 	}
 	
 	dat, err := json.Marshal(succResp)
@@ -44,6 +45,17 @@ func respSuccesfullChirpPost(w *http.ResponseWriter, body string, id int) {
 	(*w).WriteHeader(201)
 	(*w).Header().Set("Content-Type", "application/json")
 	(*w).Write(dat)
+}
+
+func respSuccesfullChirpGet(w *http.ResponseWriter, dat *[]byte) {
+
+	(*w).WriteHeader(200)
+	(*w).Header().Set("Content-Type", "application/json")
+	(*w).Write(*dat)
+}
+
+func respSuccesfullChirpDelete(w *http.ResponseWriter) {
+	(*w).WriteHeader(204)
 }
 
 func respSuccesfullUserPost(w *http.ResponseWriter, email string, id int) {
@@ -100,13 +112,6 @@ func respSuccessfullLoginPost(w *http.ResponseWriter, email string, id int, sign
 	(*w).WriteHeader(200)
 	(*w).Header().Set("Content-Type", "application/json")
 	(*w).Write(dat)
-}
-
-func respSuccesfullGet(w *http.ResponseWriter, dat *[]byte) {
-
-	(*w).WriteHeader(200)
-	(*w).Header().Set("Content-Type", "application/json")
-	(*w).Write(*dat)
 }
 
 func respondSuccesfullRefreshPost(w *http.ResponseWriter, token string) {
