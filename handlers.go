@@ -444,7 +444,7 @@ func postRefreshHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Resp
 	return postRefreshHandler
 }
 
-func postRevokeHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+func postRevokeHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http.Request) {
 	postRevokeHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		refreshToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
