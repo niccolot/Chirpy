@@ -79,19 +79,20 @@ func (db *DB) CreateUser(email string, password string) (User, *errors.CodedErro
 		Email: email,
 		Password: string(hash),
 		Id: numUsers+1,
+		IsChirpyRed: false,
 	}
 
 	return user, nil
 }
 
-func (db *DB) UpdateUser(userId int, email string, password string) (Updateduser, *errors.CodedError) {
+func (db *DB) UpdateUser(userId int, email string, password string) *errors.CodedError {
 	dbStruct, err := db.LoadDB()
 	if err != nil {
 		e := errors.CodedError{
 			Message: fmt.Errorf("failed to load database file: %w, function: %s", err, errors.GetFunctionName()).Error(),
 			StatusCode: 500,
 		}
-		return Updateduser{}, &e
+		return &e
 	}
 
 	//dbStruct.mux.RLock()
@@ -105,19 +106,35 @@ func (db *DB) UpdateUser(userId int, email string, password string) (Updateduser
 			Message: fmt.Errorf("error hashing password: %w, function: %s", errHashing, errors.GetFunctionName()).Error(),
 			StatusCode: 500,
 		}
-		return Updateduser{}, &e
+		return &e
 	}
 
 	user.Password = string(hash)
 	dbStruct.Users[userId] = user
 	db.WriteDB(&dbStruct)
 
-	updateduser := Updateduser{
-		Email: dbStruct.Users[userId].Email,
-		Id: userId,
+	return nil
+}
+
+func (db *DB) UpdateSubscription(userId int, isChirpyRed bool) *errors.CodedError {
+	dbStruct, err := db.LoadDB()
+	if err != nil {
+		e := errors.CodedError{
+			Message: fmt.Errorf("failed to load database file: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return &e
 	}
 
-	return updateduser, nil
+	//dbStruct.mux.RLock()
+	//defer dbStruct.mux.Unlock()
+	user := dbStruct.Users[userId]
+	user.IsChirpyRed = isChirpyRed
+	
+	dbStruct.Users[userId] = user
+	db.WriteDB(&dbStruct)
+
+	return nil
 }
 
 func (db *DB) GetChirps() ([]Chirp, *errors.CodedError) {
@@ -318,3 +335,4 @@ func (db *DB) SearchUserEmail(email string) (bool, int, *errors.CodedError) {
 
 	return found, userIdx, nil
 }
+

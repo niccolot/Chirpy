@@ -22,4 +22,5 @@ func initMultiplexer(mux *http.ServeMux, cfg *apiConfig, db *database.DB) {
     mux.HandleFunc("POST /api/refresh", postRefreshHandlerWrapped(db, cfg))
     mux.HandleFunc("POST /api/revoke", postRevokeHandlerWrapped(db))
     mux.HandleFunc("DELETE /api/chirps/{chirpId}", deleteChirpIDHandlerWrapped(db, cfg))
+    mux.HandleFunc("POST /api/polka/webhooks", postPolkaWebhooksHandlerWrapped(db, cfg))
 } 

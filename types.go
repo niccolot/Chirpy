@@ -10,6 +10,7 @@ type apiConfig struct {
     FileserverHits int
 	mu *sync.Mutex
 	JwtSecret string
+	PolkaApiKey string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {	
@@ -57,6 +58,7 @@ type succesfullChirpPostResponse struct {
 type succesfullUserPostResponse struct {
 	Id int `json:"id"`
 	Email string `json:"email"`
+	IsChirpyRed bool `json:"is_chirpy_red"`
 }
 
 type succesfullUserPutResponse struct {
@@ -69,8 +71,18 @@ type succesfullLoginPostResponse struct {
 	Email string `json:"email"`
 	JWT string `json:"token"`
 	RefreshToken string `json:"refresh_token"`
+	IsChirpyred bool `json:"is_chirpy_red"`
 }
 
 type succesfullRefreshPost struct {
 	Token string `json:"token"`
+}
+
+type polkaWebhooksPostRequest struct {
+	Event string `json:"event"`
+	Data polkaWebhooksData `json:"data"`
+}
+
+type polkaWebhooksData struct {
+	UserId int `json:"user_id"`
 }

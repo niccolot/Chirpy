@@ -12,6 +12,7 @@ import (
 func main() {
     godotenv.Load()
     jwtSecret := os.Getenv("JWT_SECRET")
+    polkaApiKey := os.Getenv("POLKA_API_KEY")
 
     mux := http.NewServeMux()
     
@@ -19,6 +20,7 @@ func main() {
         FileserverHits: 0,
         mu: &sync.Mutex{},
         JwtSecret: jwtSecret,
+        PolkaApiKey: polkaApiKey,
     }
 
     db, err := database.NewDB("database.json")

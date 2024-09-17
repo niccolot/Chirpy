@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -9,8 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"crypto/rand"
-	"encoding/hex"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/niccolot/Chirpy/internal/database"
 	"github.com/niccolot/Chirpy/internal/errors"
@@ -327,12 +327,7 @@ func postLoginHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 			return 
 		}
 
-		found, userIdx, errSearchPtr := db.SearchUserEmail(req.Email)
-		if errSearchPtr != nil {
-			respondWithError(&w, errSearchPtr)
-			return 
-		}
-
+		found, userIdx := dbStruct.SearchUserEmail(req.Email)
 		if !found {
 			e := errors.CodedError{
 				Message: fmt.Sprintf("user '%s' not found", req.Email),
@@ -390,13 +385,14 @@ func postLoginHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 			respondWithError(&w, &e)
 			return
 		}
-		
+
 		refreshToken := hex.EncodeToString(randomSlice)
 		user := database.User{
 			Id: userIdx,
 			Email: req.Email,
-			Password: req.Password,
+			Password: req.Password,//dbStruct.Users[userIdx].Password,
 			RefreshToken: refreshToken,
+			IsChirpyRed: dbStruct.Users[userIdx].IsChirpyRed,
 
 			// refresh token expires after 60 days and the date is stored as ISO 8601 format
 			RefreshTokenExpiresAt: currTime.Add(60 * 24 * time.Hour).UTC().Format(time.RFC3339),
@@ -412,7 +408,7 @@ func postLoginHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 			return
 		}
 
-		respSuccessfullLoginPost(&w, req.Email, userIdx, signedToken, refreshToken)
+		respSuccessfullLoginPost(&w, req.Email, userIdx, signedToken, refreshToken, dbStruct.Users[userIdx].IsChirpyRed)
 	}
 
 	return postLoginHandler
@@ -464,8 +460,16 @@ func putUserhandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Response
 			respondWithError(&w, &e)
 			return 
 		}
-
-		db.UpdateUser(userId, req.Email, req.Password)
+		
+		errUpdate := db.UpdateUser(userId, req.Email, req.Password)
+		if errUpdate != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to update database: %w, function: %s", errUpdate, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
 		respSuccesfullUserPut(&w, req.Email, userId)
 	}
 
@@ -582,6 +586,7 @@ func postRevokeHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *ht
 			Password: dbStruct.Users[userIdx].Password,
 			RefreshToken: "",
 			RefreshTokenExpiresAt: "",
+			IsChirpyRed: false,
 		}
 
 		dbStruct.Users[userIdx] = user
@@ -595,4 +600,67 @@ func postRevokeHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *ht
 	}
 
 	return postRevokeHandler 
+}
+
+func postPolkaWebhooksHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	postPolkaWebhooksHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		
+		apiKey := strings.TrimPrefix(r.Header.Get("Authorization"), "ApiKey ")
+		if apiKey != cfg.PolkaApiKey {
+			e := errors.CodedError{
+				Message: "invalid api key",
+				StatusCode: 401,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+		
+		decoder := json.NewDecoder(r.Body)
+		req := polkaWebhooksPostRequest{}
+		errDecode := decoder.Decode(&req)
+		if errDecode != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to decode request: %w, function: %s", errDecode, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		if req.Event != "user.upgraded" {
+			respSuccesfullPolkaWebhooksPost(&w)
+			return
+		}
+
+		dbStruct, errLoading := db.LoadDB()
+		if errLoading != nil {
+			respondWithError(&w, errLoading)
+			return
+		}
+
+		found, _ := dbStruct.SearchUserId(req.Data.UserId)
+		if !found {
+			e := errors.CodedError{
+				Message: fmt.Sprintf("user_id %d not found", req.Data.UserId),
+				StatusCode: 404,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+
+		errUpdate := db.UpdateSubscription(req.Data.UserId, true)
+		if errUpdate != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to update database: %w, function: %s", errUpdate, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		respSuccesfullPolkaWebhooksPost(&w)
+	}
+
+	return postPolkaWebhooksHandler
 }

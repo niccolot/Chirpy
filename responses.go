@@ -62,6 +62,7 @@ func respSuccesfullUserPost(w *http.ResponseWriter, email string, id int) {
 	succResp := succesfullUserPostResponse{
 		Id: id,
 		Email: email,
+		IsChirpyRed: false,
 	}
 	
 	dat, err := json.Marshal(succResp)
@@ -94,12 +95,13 @@ func respSuccesfullUserPut(w *http.ResponseWriter, email string, id int) {
 	(*w).Write(dat)
 }
 
-func respSuccessfullLoginPost(w *http.ResponseWriter, email string, id int, signedToken string, refreshToken string) {
+func respSuccessfullLoginPost(w *http.ResponseWriter, email string, id int, signedToken string, refreshToken string, isChirpyRed bool) {
 	succResp := succesfullLoginPostResponse{
 		Id: id,
 		Email: email,
 		JWT: signedToken,
 		RefreshToken: refreshToken,
+		IsChirpyred: isChirpyRed,
 	}
 
 	dat, err := json.Marshal(succResp)
@@ -132,5 +134,9 @@ func respondSuccesfullRefreshPost(w *http.ResponseWriter, token string) {
 }
 
 func respSuccesfullRevokePost(w *http.ResponseWriter) {
+	(*w).WriteHeader(204)
+}
+
+func respSuccesfullPolkaWebhooksPost(w *http.ResponseWriter) {
 	(*w).WriteHeader(204)
 }
