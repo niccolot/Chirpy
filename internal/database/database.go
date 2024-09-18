@@ -137,7 +137,7 @@ func (db *DB) UpdateSubscription(userId int, isChirpyRed bool) *errors.CodedErro
 	return nil
 }
 
-func (db *DB) GetChirps() ([]Chirp, *errors.CodedError) {
+func (db *DB) GetChirps(sorting string) ([]Chirp, *errors.CodedError) {
 	dbStruct, err := db.LoadDB()
 	if err != nil {
 		e := errors.CodedError{
@@ -161,9 +161,57 @@ func (db *DB) GetChirps() ([]Chirp, *errors.CodedError) {
 		chirpsSlice[i-1] = chirp
 	}
 
-	sort.Slice(chirpsSlice, func(i, j int) bool {
-		return chirpsSlice[i].Id < chirpsSlice[j].Id 
-	})
+	if sorting == "desc" {
+		sort.Slice(chirpsSlice, func(i, j int) bool {
+			return chirpsSlice[i].Id > chirpsSlice[j].Id 
+		})	
+	} else {
+		// sort = "asc" default option
+		sort.Slice(chirpsSlice, func(i, j int) bool {
+			return chirpsSlice[i].Id < chirpsSlice[j].Id 
+		})
+	}
+
+	return chirpsSlice, nil
+}
+
+func (db *DB) GetChirpsFromAuthor(authorId int, sorting string) ([]Chirp, *errors.CodedError) {
+	dbStruct, err := db.LoadDB()
+	if err != nil {
+		e := errors.CodedError{
+			Message: fmt.Errorf("failed to load database file: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return nil, &e
+	}
+
+	len, err := db.GetNumChirps()
+	if err != nil {
+		e := errors.CodedError{
+			Message: fmt.Errorf("failed to get database size: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return nil, &e
+	}
+
+	chirpsSlice := make([]Chirp, len)
+	for i, chirp := range dbStruct.Chirps {
+		if chirp.AuthorId == authorId {
+			chirpsSlice[i-1] = chirp
+		}
+	}
+
+	if sorting == "desc" {
+		sort.Slice(chirpsSlice, func(i, j int) bool {
+			return chirpsSlice[i].Id > chirpsSlice[j].Id 
+		})	
+	} else {
+		// sort = "asc" default option
+		sort.Slice(chirpsSlice, func(i, j int) bool {
+			return chirpsSlice[i].Id < chirpsSlice[j].Id 
+		})
+	}
+	
 
 	return chirpsSlice, nil
 }

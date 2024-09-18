@@ -131,17 +131,37 @@ func postChirpHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 func getChirpsHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http.Request) {
 	getChirpsHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
-
-		chirps, err := db.GetChirps()
-		if err != nil {
-			respondWithError(&w, err)
-			return 
+		authorIdString := r.URL.Query().Get("author_id")
+		sorting := r.URL.Query().Get("sort")
+		var chirps []database.Chirp
+		var err *errors.CodedError
+		if authorIdString != "" {
+			authorId, errAtoi := strconv.Atoi(authorIdString)
+			if errAtoi != nil {
+				e := errors.CodedError{
+					Message: fmt.Errorf("failed to convert string to int: %w, function: %s", errAtoi, errors.GetFunctionName()).Error(),
+					StatusCode: 500,
+				}
+				respondWithError(&w, &e)
+				return
+			}
+			chirps, err = db.GetChirpsFromAuthor(authorId, sorting)
+			if err != nil {
+				respondWithError(&w, err)
+				return 
+			}
+		} else {
+			chirps, err = db.GetChirps(sorting)
+			if err != nil {
+				respondWithError(&w, err)
+				return 
+			}
 		}
-
+		
 		dat, errMarshal := json.Marshal(chirps)
 		if errMarshal != nil {
 			e := errors.CodedError{
-				Message: fmt.Errorf("failed to marshal json: %w, function: %s", err, errors.GetFunctionName()).Error(),
+				Message: fmt.Errorf("failed to marshal json: %w, function: %s", errMarshal, errors.GetFunctionName()).Error(),
 				StatusCode: 500,
 			}
 			respondWithError(&w, &e)
