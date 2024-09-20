@@ -638,7 +638,6 @@ func postRevokeHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *ht
 func postPolkaWebhooksHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	postPolkaWebhooksHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
-		
 		apiKey := strings.TrimPrefix(r.Header.Get("Authorization"), "ApiKey ")
 		if apiKey != cfg.PolkaApiKey {
 			e := errors.CodedError{

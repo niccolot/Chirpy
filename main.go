@@ -5,6 +5,8 @@ import (
 	"sync"
     "fmt"
     "os"
+    "flag"
+    "log"
     "github.com/joho/godotenv"
     "github.com/niccolot/Chirpy/internal/database"
 )
@@ -21,6 +23,23 @@ func main() {
         mu: &sync.Mutex{},
         JwtSecret: jwtSecret,
         PolkaApiKey: polkaApiKey,
+    }
+
+    debug := flag.Bool("debug", false, "Enable debug mode")
+	flag.Parse()
+
+    if *debug {
+        fmt.Println("Debug mode enabled: Deleting database.json...")
+		err := os.Remove("database.json")
+		if err != nil {
+			if os.IsNotExist(err) {
+				fmt.Println("database.json does not exist, nothing to delete.")
+			} else {
+				log.Fatalf("Error deleting database.json: %v", err)
+			}
+		} else {
+			fmt.Println("database.json successfully deleted.")
+		}
     }
 
     db, err := database.NewDB("database.json")

@@ -97,7 +97,6 @@ func (db *DB) UpdateUser(userId int, email string, password string, refreshToken
 	}
 
 	dbStruct.mux.RLock()
-	defer dbStruct.mux.RUnlock()
 	
 	user := dbStruct.Users[userId]
 	user.Email = email
@@ -111,6 +110,8 @@ func (db *DB) UpdateUser(userId int, email string, password string, refreshToken
 		return &e
 	}
 
+	dbStruct.mux.RUnlock()
+
 	currTime := time.Now().UTC()
 
 	user.Password = string(hash)
@@ -118,10 +119,10 @@ func (db *DB) UpdateUser(userId int, email string, password string, refreshToken
 	user.RefreshTokenExpiresAt = currTime.Add(60 * 24 * time.Hour).UTC().Format(time.RFC3339)
 	
 	dbStruct.mux.Lock()
-	defer dbStruct.mux.Unlock()
 	
 	dbStruct.Users[userId] = user
 	db.WriteDB(&dbStruct)
+	dbStruct.mux.Unlock()
 
 	return nil
 }
@@ -137,16 +138,17 @@ func (db *DB) UpdateSubscription(userId int, isChirpyRed bool) *errors.CodedErro
 	}
 
 	dbStruct.mux.RLock()
-	defer dbStruct.mux.RUnlock()
 	
 	user := dbStruct.Users[userId]
 	user.IsChirpyRed = isChirpyRed
+	dbStruct.mux.RUnlock()
 
 	dbStruct.mux.Lock()
-	defer dbStruct.mux.Unlock()
 	
 	dbStruct.Users[userId] = user
 	db.WriteDB(&dbStruct)
+	
+	dbStruct.mux.Unlock()
 
 	return nil
 }
