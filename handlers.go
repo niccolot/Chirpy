@@ -399,7 +399,7 @@ func postLoginHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 		_, errRand := rand.Read(randomSlice)
 		if errRand != nil {
 			e := errors.CodedError{
-				Message: fmt.Errorf("failed to generate refresh token: %w, function: %s", errSign, errors.GetFunctionName()).Error(),
+				Message: fmt.Errorf("failed to generate refresh token: %w, function: %s", errRand, errors.GetFunctionName()).Error(),
 				StatusCode: 500,
 			}
 			respondWithError(&w, &e)
@@ -410,7 +410,7 @@ func postLoginHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 		user := database.User{
 			Id: userIdx,
 			Email: req.Email,
-			Password: req.Password,//dbStruct.Users[userIdx].Password,
+			Password: dbStruct.Users[userIdx].Password,//req.Password,
 			RefreshToken: refreshToken,
 			IsChirpyRed: dbStruct.Users[userIdx].IsChirpyRed,
 
@@ -480,8 +480,21 @@ func putUserhandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Response
 			respondWithError(&w, &e)
 			return 
 		}
+
+		randomSlice := make([]byte, 32)
+		_, errRand := rand.Read(randomSlice)
+		if errRand != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to generate refresh token: %w, function: %s", errRand, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+
+		refreshToken := hex.EncodeToString(randomSlice)
 		
-		errUpdate := db.UpdateUser(userId, req.Email, req.Password)
+		errUpdate := db.UpdateUser(userId, req.Email, req.Password, refreshToken)
 		if errUpdate != nil {
 			e := errors.CodedError{
 				Message: fmt.Errorf("failed to update database: %w, function: %s", errUpdate, errors.GetFunctionName()).Error(),

@@ -26,7 +26,6 @@ func NewDB(path string) (*DB, *errors.CodedError) {
 
 	db := &DB{
 		path: path,
-		mux: &sync.RWMutex{},
 	}
 
 	return db, nil

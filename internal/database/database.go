@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"encoding/json"
 	"sort"
+	"time"
 	"golang.org/x/crypto/bcrypt"
 	"github.com/niccolot/Chirpy/internal/errors"
 )
@@ -85,7 +86,7 @@ func (db *DB) CreateUser(email string, password string) (User, *errors.CodedErro
 	return user, nil
 }
 
-func (db *DB) UpdateUser(userId int, email string, password string) *errors.CodedError {
+func (db *DB) UpdateUser(userId int, email string, password string, refreshToken string) *errors.CodedError {
 	dbStruct, err := db.LoadDB()
 	if err != nil {
 		e := errors.CodedError{
@@ -95,8 +96,9 @@ func (db *DB) UpdateUser(userId int, email string, password string) *errors.Code
 		return &e
 	}
 
-	//dbStruct.mux.RLock()
-	//defer dbStruct.mux.Unlock()
+	dbStruct.mux.RLock()
+	defer dbStruct.mux.RUnlock()
+	
 	user := dbStruct.Users[userId]
 	user.Email = email
 	password_bytes := []byte(password)
@@ -109,7 +111,15 @@ func (db *DB) UpdateUser(userId int, email string, password string) *errors.Code
 		return &e
 	}
 
+	currTime := time.Now().UTC()
+
 	user.Password = string(hash)
+	user.RefreshToken = refreshToken
+	user.RefreshTokenExpiresAt = currTime.Add(60 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	
+	dbStruct.mux.Lock()
+	defer dbStruct.mux.Unlock()
+	
 	dbStruct.Users[userId] = user
 	db.WriteDB(&dbStruct)
 
@@ -126,10 +136,14 @@ func (db *DB) UpdateSubscription(userId int, isChirpyRed bool) *errors.CodedErro
 		return &e
 	}
 
-	//dbStruct.mux.RLock()
-	//defer dbStruct.mux.Unlock()
+	dbStruct.mux.RLock()
+	defer dbStruct.mux.RUnlock()
+	
 	user := dbStruct.Users[userId]
 	user.IsChirpyRed = isChirpyRed
+
+	dbStruct.mux.Lock()
+	defer dbStruct.mux.Unlock()
 	
 	dbStruct.Users[userId] = user
 	db.WriteDB(&dbStruct)
@@ -226,6 +240,9 @@ func (db *DB) GetChirpID(id int) (Chirp, *errors.CodedError) {
 		return Chirp{}, &e
 	}
 
+	dbStruct.mux.RLock()
+	defer dbStruct.mux.RUnlock()
+
 	chirp, ok := dbStruct.Chirps[id]
 	if !ok {
 		e := errors.CodedError{
@@ -247,6 +264,9 @@ func (db *DB) GetNumChirps() (int, *errors.CodedError) {
 		}
 		return 0, &e
 	}
+
+	dbStruct.mux.RLock()
+	defer dbStruct.mux.RUnlock()
 
 	return len(dbStruct.Chirps), nil
 }

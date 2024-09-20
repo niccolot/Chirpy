@@ -13,7 +13,6 @@ type Chirp struct {
 
 type DB struct {
 	path string
-	mux  *sync.RWMutex
 }
 
 type DBStructure struct {
