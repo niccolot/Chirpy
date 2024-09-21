@@ -1,6 +1,69 @@
 # Chirpy
 
-Implementation of a twitter like RESTAPI. The endpoints permits to register a user, login, change credentials, post read and delete a 'chirp', aka tweet.
+Implementation of a twitter-like RESTAPI. The endpoints permits to register a user, login, change credentials, post read and delete a 'chirp', aka tweet. 
+
+In the app there are implemented endopints in order to register and user, change its credentials post/delete and list chirps. 
+
+A fittitious webhook is implemented that changes the status of the account to the premium version **chirpy red**. 
+
+### Authorizations and authentications
+
+A system of authentication via JWTs is implemented (with an expire time of max 24 hours), with the relative refresh tokens (with an expire time of 60 days). The refresh token is rotated every time the user credentials are changed or the JWT are refreshed and they can be revoked with the apposite endpoint. The secret key for encripting the JWTs is stored in a `.env` file in the root of the repo.
+
+The webhook endpoints authorization is implemented via an API key that is stored in a `.env` file in the root of the repo and the users passwords are stored in the database as hashed strings.
+
+### Database 
+
+The database is implemented as simple `database.json` file that is generated when the program is started. The use of mutexes is done in order to avoid thread-unsafe read/write operations when multiple users are using the API.
+
+### Errors
+
+If an HTTP fails a response is given in the form
+
+```json
+{
+    "error": "<error message with information relative to what happened and where>",
+    "status code": 1 # whatever code may be 
+}
+```
+
+Internal errors, e.g. fails to parse json, read some file, use some functions etc. are reported with the status code `500` and the relative message while more specific errors are listed in the endpoints below.
+
+## How to use
+
+```
+git clone https://github.com/niccolot/Chirpy
+
+# for hashing functions
+go getgolang.org/x/crypto
+
+# for env variables functions
+go getgithub.com/joho/godotenv
+
+# for jwt functions
+go get github.com/golang-jwt/jwt/v5
+```
+
+In order to function the server has to read some environment variables, the `POLKA_API_KEY` which mimics the api key usually provided by third party companies and the `JWT_SECRET` that is used for the enription of the JWTs. This is done via the `create_env_vars.sh` script
+
+```
+chmod +x create_env_vars.sh
+./create_env_vars.sh
+```
+
+The server can be started with 
+
+```
+go build -o out && ./out
+```
+or
+```
+go build -o out && ./out --debug 
+```
+
+with the `--debug` flag deletes the old `database.json` file  creates a new one.
+
+Once the server is started one can play with it sending HTTP request from a separate terminal watching the responses. One can use the linux `curl` command or the VScode extention [thunder client](https://www.thunderclient.com/) that gives a GUI for cheking the functioning of servers.
 
 ## API endpoints
 
@@ -35,7 +98,7 @@ Implementation of a twitter like RESTAPI. The endpoints permits to register a us
 
     #### Request
 
-    The header must contain the user's JWT
+    The header must contain the users JWT
 
     ```
     Authorization: "Bearer <jwt>"
@@ -112,7 +175,7 @@ Implementation of a twitter like RESTAPI. The endpoints permits to register a us
 
     #### Request
 
-    The header has to contain the user's JWT
+    The header has to contain the users JWT
 
     ```
     Authorization: "Bearer <jwt>"
@@ -260,7 +323,7 @@ Implementation of a twitter like RESTAPI. The endpoints permits to register a us
 
     #### Request
 
-    The header must contain the user's JWT
+    The header must contain the users JWT
 
     ```
     Authorization: "Bearer <jwt>"
@@ -276,7 +339,7 @@ Implementation of a twitter like RESTAPI. The endpoints permits to register a us
     * Message: `invalid user`
     * Status code: `403`
 
-    If the user's JWT is invalid the request is denied
+    If the users JWT is invalid the request is denied
 
     * Message: `invalid token`
     * Status code: `403`
@@ -287,7 +350,7 @@ Implementation of a twitter like RESTAPI. The endpoints permits to register a us
 
     #### Request
 
-    The header of the request has to contain the Polka API key (see `how to use` section to see how to generate one in order to mimic the keys usually given by thir part companies).
+    The header of the request has to contain the Polka API key 
 
     ```
     Authorization: "ApiKey <apikey>"
