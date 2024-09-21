@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,7 +30,7 @@ func metricsHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.R
 		tmpl, err := template.ParseFiles("index_admin.html")
 		if err != nil {
 			e := errors.CodedError{
-				Message: fmt.Errorf("error parsing template: %w, function: %s", err, errors.GetFunctionName()).Error(),
+				Message: fmt.Errorf("internal Server Error: %w, function: %s", err, errors.GetFunctionName()).Error(),
 				StatusCode: 500,
 			}
 			respondWithError(&w, &e)
@@ -40,8 +39,11 @@ func metricsHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.R
 	
 		err = tmpl.Execute(w, cfg)
 		if err != nil {
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			log.Println("Error executing template:", err)
+			e := errors.CodedError{
+				Message: fmt.Errorf("error parsing template: %w, function: %s", err, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
 			return
 		}
 	}
@@ -266,7 +268,7 @@ func deleteChirpIDHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Re
 
 		if dbStruct.Users[userId].Id != dbStruct.Chirps[chirpId].AuthorId {
 			e := errors.CodedError{
-				Message: "invalid token, permission denied",
+				Message: "invalid user",
 				StatusCode: 403,
 			}
 			respondWithError(&w, &e)
@@ -443,6 +445,7 @@ func putUserhandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Response
 		if errDecode != nil {
 			e := errors.CodedError{
 				Message: fmt.Errorf("failed to decode request: %w, function: %s", errDecode, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
 			}
 			respondWithError(&w, &e)
 			return 
@@ -530,7 +533,7 @@ func postRefreshHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Resp
 
 		if !found {
 			e := errors.CodedError{
-				Message: "refresh token does not exist",
+				Message: "refresh token does not exists",
 				StatusCode: 401,
 			}
 			respondWithError(&w, &e)
@@ -579,7 +582,27 @@ func postRefreshHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Resp
 			return
 		}
 
-		respondSuccesfullRefreshPost(&w, signedToken)
+		randomSlice := make([]byte, 32)
+		_, errRand := rand.Read(randomSlice)
+		if errRand != nil {
+			e := errors.CodedError{
+				Message: fmt.Errorf("failed to generate refresh token: %w, function: %s", errRand, errors.GetFunctionName()).Error(),
+				StatusCode: 500,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+
+		newRefreshToken := hex.EncodeToString(randomSlice)
+
+		user := dbStruct.Users[userIdx]
+		
+		user.RefreshToken = newRefreshToken
+		user.RefreshTokenExpiresAt = currTime.Add(60 * 24 * time.Hour).UTC().Format(time.RFC3339)
+
+		dbStruct.Users[userIdx] = user
+
+		respondSuccesfullRefreshPost(&w, signedToken, refreshToken)
 	}
 
 	return postRefreshHandler
@@ -619,7 +642,7 @@ func postRevokeHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *ht
 			Password: dbStruct.Users[userIdx].Password,
 			RefreshToken: "",
 			RefreshTokenExpiresAt: "",
-			IsChirpyRed: false,
+			IsChirpyRed: dbStruct.Users[userIdx].IsChirpyRed,
 		}
 
 		dbStruct.Users[userIdx] = user

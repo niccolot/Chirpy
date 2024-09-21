@@ -116,9 +116,10 @@ func respSuccessfullLoginPost(w *http.ResponseWriter, email string, id int, sign
 	(*w).Write(dat)
 }
 
-func respondSuccesfullRefreshPost(w *http.ResponseWriter, token string) {
+func respondSuccesfullRefreshPost(w *http.ResponseWriter, token string, refreshToken string) {
 	succResp := succesfullRefreshPost{
 		Token: token,
+		RefreshToken: refreshToken,
 	}
 
 	dat, err := json.Marshal(succResp)
