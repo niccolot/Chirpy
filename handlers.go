@@ -64,12 +64,6 @@ func postChirpHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 			respondWithError(&w, &e)
 			return 
 		}
-		
-		dbStruct, err := db.LoadDB()
-		if err != nil {
-			respondWithError(&w, err)
-			return 
-		}
 
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		tokenObjPtr, errParseToken := jwt.ParseWithClaims(token, &jwt.RegisteredClaims{}, func(*jwt.Token) (interface{}, error) {
@@ -117,10 +111,10 @@ func postChirpHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 		}
 
 		id := len+1
-		dbStruct.Chirps[id] = chirp
-		errWrite := db.WriteDB(&dbStruct)
-		if errWrite != nil {
-			respondWithError(&w, errWrite)
+
+		errSave := db.SaveChirp(&chirp, id)
+		if errSave != nil {
+			respondWithError(&w, errSave)
 			return 
 		}
 		
@@ -256,26 +250,10 @@ func deleteChirpIDHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Re
 			return
 		}
 
-		dbStruct, errLoad := db.LoadDB()
-		if errLoad != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to load database: %w, function: %s", errGetID, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
-			}
-			respondWithError(&w, &e)
-			return
+		errDelete := db.DeleteChirp(chirpId, userId)
+		if errDelete != nil {
+			respondWithError(&w, errDelete)
 		}
-
-		if dbStruct.Users[userId].Id != dbStruct.Chirps[chirpId].AuthorId {
-			e := errors.CodedError{
-				Message: "invalid user",
-				StatusCode: 403,
-			}
-			respondWithError(&w, &e)
-			return
-		}
-
-		delete(dbStruct.Chirps, chirpId)
 
 		respSuccesfullChirpDelete(&w)
 	}
@@ -302,12 +280,6 @@ func postUserHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http
 			respondWithError(&w, err)
 			return 
 		}
-		
-		dbStruct, err := db.LoadDB()
-		if err != nil {
-			respondWithError(&w, err)
-			return 
-		}
 
 		len, err := db.GetNumUsers()
 		if err != nil {
@@ -316,11 +288,10 @@ func postUserHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http
 		}
 
 		id := len+1
-		dbStruct.Users[id] = user
-		errWrite := db.WriteDB(&dbStruct)
-		if errWrite != nil {
-			respondWithError(&w, errWrite)
-			return 
+		errSave := db.SaveUser(&user, id)
+		if errSave != nil {
+			respondWithError(&w, errSave)
+			return
 		}
 		
 		respSuccesfullUserPost(&w, req.Email, id)
@@ -349,6 +320,7 @@ func postLoginHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 			return 
 		}
 
+		
 		found, userIdx := dbStruct.SearchUserEmail(req.Email)
 		if !found {
 			e := errors.CodedError{
@@ -358,8 +330,12 @@ func postLoginHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 			respondWithError(&w, &e)
 			return
 		}
-		
-		errCompPass := bcrypt.CompareHashAndPassword([]byte(dbStruct.Users[userIdx].Password), []byte(req.Password))
+
+		dbStruct.Mux.RLock()
+		pass := dbStruct.Users[userIdx].Password
+		dbStruct.Mux.RUnlock()
+
+		errCompPass := bcrypt.CompareHashAndPassword([]byte(pass), []byte(req.Password))
 		if errCompPass != nil {
 			e := errors.CodedError{
 				Message: "unauthorized access",
@@ -408,18 +384,26 @@ func postLoginHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 			return
 		}
 
+		dbStruct.Mux.RLock()
+		red := dbStruct.Users[userIdx].IsChirpyRed
+		dbStruct.Mux.RUnlock()
+
 		refreshToken := hex.EncodeToString(randomSlice)
 		user := database.User{
 			Id: userIdx,
 			Email: req.Email,
-			Password: dbStruct.Users[userIdx].Password,//req.Password,
+			Password: pass,
 			RefreshToken: refreshToken,
-			IsChirpyRed: dbStruct.Users[userIdx].IsChirpyRed,
+			IsChirpyRed: red,
 
 			// refresh token expires after 60 days and the date is stored as ISO 8601 format
 			RefreshTokenExpiresAt: currTime.Add(60 * 24 * time.Hour).UTC().Format(time.RFC3339),
 		}
+
+		dbStruct.Mux.RLock()
 		dbStruct.Users[userIdx] = user
+		dbStruct.Mux.RUnlock()
+
 		errWriteRefreshExp := db.WriteDB(&dbStruct)
 		if errWriteRefreshExp != nil {
 			e := errors.CodedError{
@@ -430,7 +414,11 @@ func postLoginHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 			return
 		}
 
-		respSuccessfullLoginPost(&w, req.Email, userIdx, signedToken, refreshToken, dbStruct.Users[userIdx].IsChirpyRed)
+		dbStruct.Mux.Lock()
+		dbStruct.Users[userIdx] = user
+		dbStruct.Mux.Unlock()
+
+		respSuccessfullLoginPost(&w, req.Email, userIdx, signedToken, refreshToken, red)
 	}
 
 	return postLoginHandler
@@ -539,8 +527,12 @@ func postRefreshHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Resp
 			respondWithError(&w, &e)
 			return
 		} 
+		
+		dbStruct.Mux.RLock()
+		expiresAt := dbStruct.Users[userIdx].RefreshTokenExpiresAt
+		dbStruct.Mux.RUnlock()
 
-		expDate, errParse := time.Parse(time.RFC3339, dbStruct.Users[userIdx].RefreshTokenExpiresAt)
+		expDate, errParse := time.Parse(time.RFC3339, expiresAt)
 		if errParse != nil {
 			e := errors.CodedError{
 				Message: fmt.Errorf("failed to parse expiration date: %w, function: %s", errParse, errors.GetFunctionName()).Error(),
@@ -595,12 +587,16 @@ func postRefreshHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Resp
 
 		newRefreshToken := hex.EncodeToString(randomSlice)
 
+		dbStruct.Mux.RLock()
 		user := dbStruct.Users[userIdx]
+		dbStruct.Mux.RUnlock()
 		
 		user.RefreshToken = newRefreshToken
 		user.RefreshTokenExpiresAt = currTime.Add(60 * 24 * time.Hour).UTC().Format(time.RFC3339)
 
+		dbStruct.Mux.Lock()
 		dbStruct.Users[userIdx] = user
+		dbStruct.Mux.Unlock()
 
 		respondSuccesfullRefreshPost(&w, signedToken, refreshToken)
 	}
@@ -635,17 +631,26 @@ func postRevokeHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *ht
 			respondWithError(&w, &e)
 			return
 		} 
+
+		dbStruct.Mux.RLock()
+		email := dbStruct.Users[userIdx].Email
+		pass := dbStruct.Users[userIdx].Password
+		red := dbStruct.Users[userIdx].IsChirpyRed
+		dbStruct.Mux.RUnlock()
 		
 		user := database.User{
 			Id: userIdx,
-			Email: dbStruct.Users[userIdx].Email,
-			Password: dbStruct.Users[userIdx].Password,
+			Email: email,
+			Password: pass,
 			RefreshToken: "",
 			RefreshTokenExpiresAt: "",
-			IsChirpyRed: dbStruct.Users[userIdx].IsChirpyRed,
+			IsChirpyRed: red,
 		}
 
+		dbStruct.Mux.Lock()
 		dbStruct.Users[userIdx] = user
+		dbStruct.Mux.Unlock()
+		
 		errWrite := db.WriteDB(&dbStruct)
 		if errWrite != nil {
 			respondWithError(&w, errWrite)

@@ -39,6 +39,47 @@ func (db *DB) CreateChirp(body string, authorid int) (Chirp, *errors.CodedError)
 	return chirp, nil
 }
 
+func (db *DB) SaveChirp(chirp *Chirp, id int) *errors.CodedError {
+	dbStruct, err := db.LoadDB()
+	if err != nil {
+		e := errors.CodedError{
+			Message: fmt.Errorf("failed to load database file: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return &e
+	}
+
+	dbStruct.Mux.Lock()
+	defer dbStruct.Mux.Unlock()
+	dbStruct.Chirps[id] = *chirp
+
+	errWrite := db.WriteDB(&dbStruct)
+	if errWrite != nil {
+		return errWrite
+	}
+
+	return nil
+}
+
+func (db *DB) DeleteChirp(chirpId int, userId int) *errors.CodedError {
+	dbStruct, errLoad := db.LoadDB()
+	if errLoad != nil {
+		return errLoad
+	}
+
+	errCheck := dbStruct.CheckIDs(userId, chirpId)
+	if errCheck != nil {
+		return errCheck
+	}
+
+	dbStruct.Mux.Lock()
+	defer dbStruct.Mux.Unlock()
+
+	delete(dbStruct.Chirps, chirpId)
+
+	return nil
+}
+
 func (db *DB) CreateUser(email string, password string) (User, *errors.CodedError) {
 	numUsers, errSize := db.GetNumUsers()
 	if errSize != nil {
@@ -86,6 +127,28 @@ func (db *DB) CreateUser(email string, password string) (User, *errors.CodedErro
 	return user, nil
 }
 
+func (db *DB) SaveUser(user *User, id int) *errors.CodedError {
+	dbStruct, err := db.LoadDB()
+	if err != nil {
+		e := errors.CodedError{
+			Message: fmt.Errorf("failed to load database file: %w, function: %s", err, errors.GetFunctionName()).Error(),
+			StatusCode: 500,
+		}
+		return &e
+	}
+
+	dbStruct.Mux.Lock()
+	defer dbStruct.Mux.Unlock()
+	dbStruct.Users[id] = *user
+
+	errWrite := db.WriteDB(&dbStruct)
+	if errWrite != nil {
+		return errWrite
+	}
+
+	return nil
+}
+
 func (db *DB) UpdateUser(userId int, email string, password string, refreshToken string) *errors.CodedError {
 	dbStruct, err := db.LoadDB()
 	if err != nil {
@@ -96,7 +159,7 @@ func (db *DB) UpdateUser(userId int, email string, password string, refreshToken
 		return &e
 	}
 
-	dbStruct.mux.RLock()
+	dbStruct.Mux.RLock()
 	
 	user := dbStruct.Users[userId]
 	user.Email = email
@@ -110,7 +173,7 @@ func (db *DB) UpdateUser(userId int, email string, password string, refreshToken
 		return &e
 	}
 
-	dbStruct.mux.RUnlock()
+	dbStruct.Mux.RUnlock()
 
 	currTime := time.Now().UTC()
 
@@ -118,11 +181,11 @@ func (db *DB) UpdateUser(userId int, email string, password string, refreshToken
 	user.RefreshToken = refreshToken
 	user.RefreshTokenExpiresAt = currTime.Add(60 * 24 * time.Hour).UTC().Format(time.RFC3339)
 	
-	dbStruct.mux.Lock()
+	dbStruct.Mux.Lock()
 	
 	dbStruct.Users[userId] = user
 	db.WriteDB(&dbStruct)
-	dbStruct.mux.Unlock()
+	dbStruct.Mux.Unlock()
 
 	return nil
 }
@@ -137,18 +200,18 @@ func (db *DB) UpdateSubscription(userId int, isChirpyRed bool) *errors.CodedErro
 		return &e
 	}
 
-	dbStruct.mux.RLock()
+	dbStruct.Mux.RLock()
 	
 	user := dbStruct.Users[userId]
 	user.IsChirpyRed = isChirpyRed
-	dbStruct.mux.RUnlock()
+	dbStruct.Mux.RUnlock()
 
-	dbStruct.mux.Lock()
+	dbStruct.Mux.Lock()
 	
 	dbStruct.Users[userId] = user
 	db.WriteDB(&dbStruct)
 	
-	dbStruct.mux.Unlock()
+	dbStruct.Mux.Unlock()
 
 	return nil
 }
@@ -242,8 +305,8 @@ func (db *DB) GetChirpID(id int) (Chirp, *errors.CodedError) {
 		return Chirp{}, &e
 	}
 
-	dbStruct.mux.RLock()
-	defer dbStruct.mux.RUnlock()
+	dbStruct.Mux.RLock()
+	defer dbStruct.Mux.RUnlock()
 
 	chirp, ok := dbStruct.Chirps[id]
 	if !ok {
@@ -267,8 +330,8 @@ func (db *DB) GetNumChirps() (int, *errors.CodedError) {
 		return 0, &e
 	}
 
-	dbStruct.mux.RLock()
-	defer dbStruct.mux.RUnlock()
+	dbStruct.Mux.RLock()
+	defer dbStruct.Mux.RUnlock()
 
 	return len(dbStruct.Chirps), nil
 }
@@ -406,3 +469,46 @@ func (db *DB) SearchUserEmail(email string) (bool, int, *errors.CodedError) {
 	return found, userIdx, nil
 }
 
+func (dbStruct *DBStructure) SearchUserEmail(email string) (found bool, userIdx int) {
+	found = false
+
+	dbStruct.Mux.RLock()
+	defer dbStruct.Mux.RUnlock()
+
+	for i, user := range(dbStruct.Users) {
+		if user.Email == email {
+			found = true
+			userIdx = i
+			return found, userIdx
+		}
+	}
+
+	return found, 0
+}
+
+func (dbStruct *DBStructure) SearchUserId(id int) (found bool, email string) {
+	dbStruct.Mux.RLock()
+	defer dbStruct.Mux.RUnlock()
+
+	user, found := dbStruct.Users[id]
+	if !found {
+		return found, ""
+	}
+
+	return found, user.Email
+}
+
+func (dbStruct *DBStructure) CheckIDs(userId int, chirpId int) *errors.CodedError {
+	dbStruct.Mux.RLock()
+	defer dbStruct.Mux.RUnlock()
+
+	if dbStruct.Users[userId].Id != dbStruct.Chirps[chirpId].AuthorId {
+		e := errors.CodedError{
+			Message: "invalid user",
+			StatusCode: 403,
+		}
+		return &e
+	}
+
+	return nil
+}

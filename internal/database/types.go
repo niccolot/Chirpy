@@ -18,7 +18,7 @@ type DB struct {
 type DBStructure struct {
 	Chirps map[int]Chirp `json:"chirps"`
 	Users map[int]User `json:"users"`
-	mux *sync.RWMutex
+	Mux *sync.RWMutex
 }
 
 type User struct {

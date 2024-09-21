@@ -72,25 +72,3 @@ func GetDBStruct() DBStructure {
 		&sync.RWMutex{},
 	}
 }
-
-func (dbStruct *DBStructure) SearchUserEmail(email string) (found bool, userIdx int) {
-	found = false
-	for i, user := range(dbStruct.Users) {
-		if user.Email == email {
-			found = true
-			userIdx = i
-			return found, userIdx
-		}
-	}
-
-	return found, 0
-}
-
-func (dbStruct *DBStructure) SearchUserId(id int) (found bool, email string) {
-	user, found := dbStruct.Users[id]
-	if !found {
-		return found, ""
-	}
-
-	return found, user.Email
-}
