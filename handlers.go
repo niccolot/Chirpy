@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/niccolot/Chirpy/internal/database"
+	"github.com/niccolot/Chirpy/internal/jsondatabase"
 	"github.com/niccolot/Chirpy/internal/errors"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -51,7 +51,7 @@ func metricsHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.R
 	return metricsHandler
 }
 
-func postChirpHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+func postChirpHandlerWrapped(db *jsondatabase.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	postChirpHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		decoder := json.NewDecoder(r.Body)
@@ -124,12 +124,12 @@ func postChirpHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 	return postChirpHandler
 }
 
-func getChirpsHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http.Request) {
+func getChirpsHandlerWrapped(db *jsondatabase.DB) func(w http.ResponseWriter, r *http.Request) {
 	getChirpsHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		authorIdString := r.URL.Query().Get("author_id")
 		sorting := r.URL.Query().Get("sort")
-		var chirps []database.Chirp
+		var chirps []jsondatabase.Chirp
 		var err *errors.CodedError
 		if authorIdString != "" {
 			authorId, errAtoi := strconv.Atoi(authorIdString)
@@ -170,7 +170,7 @@ func getChirpsHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *htt
 	return getChirpsHandler
 }
 
-func getChirpIDHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http.Request) {
+func getChirpIDHandlerWrapped(db *jsondatabase.DB) func(w http.ResponseWriter, r *http.Request) {
 	getChirpIDHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		id, err := strconv.Atoi(r.PathValue("id"))
@@ -205,7 +205,7 @@ func getChirpIDHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *ht
 	return getChirpIDHandler
 }
 
-func deleteChirpIDHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+func deleteChirpIDHandlerWrapped(db *jsondatabase.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	deleteChirpIDHandler := func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		tokenObjPtr, errParseToken := jwt.ParseWithClaims(token, &jwt.RegisteredClaims{}, func(*jwt.Token) (interface{}, error) {
@@ -261,7 +261,7 @@ func deleteChirpIDHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Re
 	return deleteChirpIDHandler
 }
 
-func postUserHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http.Request) {
+func postUserHandlerWrapped(db *jsondatabase.DB) func(w http.ResponseWriter, r *http.Request) {
 	postUserHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		decoder := json.NewDecoder(r.Body)
@@ -300,7 +300,7 @@ func postUserHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http
 	return postUserHandler
 }
 
-func postLoginHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+func postLoginHandlerWrapped(db *jsondatabase.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	postLoginHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		decoder := json.NewDecoder(r.Body)
@@ -389,7 +389,7 @@ func postLoginHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 		dbStruct.Mux.RUnlock()
 
 		refreshToken := hex.EncodeToString(randomSlice)
-		user := database.User{
+		user := jsondatabase.User{
 			Id: userIdx,
 			Email: req.Email,
 			Password: pass,
@@ -424,7 +424,7 @@ func postLoginHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Respon
 	return postLoginHandler
 }
 
-func putUserhandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+func putUserhandlerWrapped(db *jsondatabase.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	putUserHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		decoder := json.NewDecoder(r.Body)
@@ -488,7 +488,7 @@ func putUserhandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Response
 		errUpdate := db.UpdateUser(userId, req.Email, req.Password, refreshToken)
 		if errUpdate != nil {
 			e := errors.CodedError{
-				Message: fmt.Errorf("failed to update database: %w, function: %s", errUpdate, errors.GetFunctionName()).Error(),
+				Message: fmt.Errorf("failed to update jsondatabase: %w, function: %s", errUpdate, errors.GetFunctionName()).Error(),
 				StatusCode: 500,
 			}
 			respondWithError(&w, &e)
@@ -500,7 +500,7 @@ func putUserhandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Response
 	return putUserHandler
 }
 
-func postRefreshHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+func postRefreshHandlerWrapped(db *jsondatabase.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	postRefreshHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		refreshToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -604,7 +604,7 @@ func postRefreshHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.Resp
 	return postRefreshHandler
 }
 
-func postRevokeHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http.Request) {
+func postRevokeHandlerWrapped(db *jsondatabase.DB) func(w http.ResponseWriter, r *http.Request) {
 	postRevokeHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		refreshToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -638,7 +638,7 @@ func postRevokeHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *ht
 		red := dbStruct.Users[userIdx].IsChirpyRed
 		dbStruct.Mux.RUnlock()
 		
-		user := database.User{
+		user := jsondatabase.User{
 			Id: userIdx,
 			Email: email,
 			Password: pass,
@@ -663,7 +663,7 @@ func postRevokeHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *ht
 	return postRevokeHandler 
 }
 
-func postPolkaWebhooksHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+func postPolkaWebhooksHandlerWrapped(db *jsondatabase.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	postPolkaWebhooksHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		apiKey := strings.TrimPrefix(r.Header.Get("Authorization"), "ApiKey ")
@@ -712,7 +712,7 @@ func postPolkaWebhooksHandlerWrapped(db *database.DB, cfg *apiConfig) func(w htt
 		errUpdate := db.UpdateSubscription(req.Data.UserId, true)
 		if errUpdate != nil {
 			e := errors.CodedError{
-				Message: fmt.Errorf("failed to update database: %w, function: %s", errUpdate, errors.GetFunctionName()).Error(),
+				Message: fmt.Errorf("failed to update jsondatabase: %w, function: %s", errUpdate, errors.GetFunctionName()).Error(),
 				StatusCode: 500,
 			}
 			respondWithError(&w, &e)

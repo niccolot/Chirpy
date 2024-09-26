@@ -1,8 +1,10 @@
-package  main
+package main
 
 import (
-    "net/http"
+	"net/http"
 	"sync"
+
+	"github.com/niccolot/Chirpy/internal/database"
 )
 
 
@@ -11,6 +13,7 @@ type apiConfig struct {
 	mu *sync.Mutex
 	JwtSecret string
 	PolkaApiKey string
+	dbQueries *database.Queries
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {	

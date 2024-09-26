@@ -2,11 +2,11 @@ package main
 
 import (
 	"net/http"
-    "github.com/niccolot/Chirpy/internal/database"
+    "github.com/niccolot/Chirpy/internal/jsondatabase"
 )
 
 
-func initMultiplexer(mux *http.ServeMux, cfg *apiConfig, db *database.DB) {
+func initMultiplexer(mux *http.ServeMux, cfg *apiConfig, db *jsondatabase.DB) {
 	mux.Handle("/app/*", http.StripPrefix("/app/", cfg.middlewareMetricsInc(http.FileServer(http.Dir(".")))))
     mux.HandleFunc("GET /api/healthz", healthzHandler)
     mux.HandleFunc("GET /admin/metrics/*", metricsHandlerWrapped(cfg))

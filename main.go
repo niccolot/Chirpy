@@ -1,20 +1,30 @@
 package main
 
 import (
+	"database/sql"
+	"flag"
+	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"sync"
-    "fmt"
-    "os"
-    "flag"
-    "log"
-    "github.com/joho/godotenv"
-    "github.com/niccolot/Chirpy/internal/database"
+
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
+	"github.com/niccolot/Chirpy/internal/database"
+	"github.com/niccolot/Chirpy/internal/jsondatabase"
 )
 
 func main() {
     godotenv.Load()
     jwtSecret := os.Getenv("JWT_SECRET")
     polkaApiKey := os.Getenv("POLKA_API_KEY")
+    dbURL := os.Getenv("DB_URL")
+
+    db, errDB := sql.Open("postgres", dbURL)
+    if errDB != nil {
+        log.Fatalf("error creating database: %v", errDB)
+    }
 
     mux := http.NewServeMux()
     
@@ -23,6 +33,7 @@ func main() {
         mu: &sync.Mutex{},
         JwtSecret: jwtSecret,
         PolkaApiKey: polkaApiKey,
+        dbQueries: database.New(db),
     }
 
     debug := flag.Bool("debug", false, "Enable debug mode")
@@ -42,12 +53,12 @@ func main() {
 		}
     }
 
-    db, err := database.NewDB("database.json")
-    if err != nil {
-        fmt.Println(fmt.Errorf("error creating database: %w", err).Error())
+    jsondb, errJSONDB := jsondatabase.NewDB("database.json")
+    if errJSONDB != nil {
+        log.Fatalf("error creating database: %v", errJSONDB)
     }
 
-    initMultiplexer(mux, &cfg, db)
+    initMultiplexer(mux, &cfg, jsondb)
     server := http.Server{
         Handler: mux,
         Addr: "localhost:8080",
