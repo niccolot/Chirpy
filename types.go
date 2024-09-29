@@ -1,46 +1,28 @@
 package main
 
 import (
-	"net/http"
-	//"sync"
-	"sync/atomic"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/niccolot/Chirpy/internal/database"
 )
 
 
-type apiConfig struct {
-	FileserverHits atomic.Int32
-	//mu *sync.Mutex
+type User struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string `json:"email"`
 }
 
-func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
-	handler := http.HandlerFunc(func (w http.ResponseWriter, r *http.Request) {
-		cfg.FileserverHits.Add(1)
-		next.ServeHTTP(w,r)
-	})
-
-	return handler
-}
-
-func NewAPIConfig() *apiConfig {
-	cfg := &apiConfig{}
-	cfg.FileserverHits.Store(0)
-
-	return cfg
-}
-
-type errResponse struct {
-	Error string `json:"error"`
-	StatusCode int `json:"status code"`
+func (u *User) mapUser(user *database.User) {
+	u.ID = user.ID
+	u.CreatedAt = user.CreatedAt
+	u.UpdatedAt = user.UpdatedAt
+	u.Email = user.Email
 }
 
 type TemplateData struct {
 	FileserverHits int32
 }
 
-type chirpPostRequest struct {
-	Body string `json:"body"`
-}
-
-type succesfullChirpPostResponse struct {
-	CleanedBody string `json:"cleaned_body"`
-}

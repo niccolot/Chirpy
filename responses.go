@@ -8,6 +8,10 @@ import (
 	"github.com/niccolot/Chirpy/internal/customErrors"
 )
 
+type errResponse struct {
+	Error string `json:"error"`
+	StatusCode int `json:"status code"`
+}
 
 func respondWithError(w *http.ResponseWriter, err *customErrors.CodedError) {
 	message := err.Message
@@ -22,10 +26,12 @@ func respondWithError(w *http.ResponseWriter, err *customErrors.CodedError) {
 	(*w).WriteHeader(code)
 	dat, e := json.Marshal(errResp)
 	if e != nil {
+		(*w).WriteHeader(http.StatusInternalServerError)
 		fmt.Printf("Error marshalling JSON: %s", e)
 		return
 	}
 
+	(*w).WriteHeader(err.StatusCode)
 	(*w).Write(dat)
 }
 
@@ -34,15 +40,28 @@ func respSuccesfullChirpValidation(w *http.ResponseWriter, body *string) {
 		CleanedBody: *body,
 	}
 
-
-	dat, err := json.Marshal(succResp)
-	if err != nil {
-		(*w).WriteHeader(500)
-		fmt.Printf("Error marshalling JSON: %s", err)
+	dat, errMarshal := json.Marshal(succResp)
+	if errMarshal != nil {
+		(*w).WriteHeader(http.StatusInternalServerError)
+		fmt.Printf("Error marshalling JSON: %s", errMarshal)
 		return
 	}
 
-	(*w).WriteHeader(200)
+	(*w).WriteHeader(http.StatusOK)
 	(*w).Header().Set("Content-Type", "application/json")
 	(*w).Write(dat)
+}
+
+func respSuccesfullUserPost(w *http.ResponseWriter, user *User) {
+	dat, errMarshal := json.Marshal(user)
+	if errMarshal != nil {
+		(*w).WriteHeader(http.StatusInternalServerError)
+		fmt.Printf("Error marshalling JSON: %s", errMarshal)
+		return
+	}
+
+	(*w).WriteHeader(http.StatusCreated)
+	(*w).Header().Set("Content-Type", "application/json")
+	(*w).Write(dat)
+
 }

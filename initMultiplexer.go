@@ -11,4 +11,5 @@ func initMultiplexer(mux *http.ServeMux, cfg *apiConfig) {
 	mux.HandleFunc("POST /admin/reset", resetMetricshandlerWrapperd(cfg))
 	mux.HandleFunc("GET /api/healthz", healthzHandler)
 	mux.HandleFunc("POST /api/validate_chirp", validateChirpHandler)
+	mux.HandleFunc("POST /api/users", postUsersHandlerWrapped(cfg))
 }
