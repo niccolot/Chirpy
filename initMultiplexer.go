@@ -10,6 +10,8 @@ func initMultiplexer(mux *http.ServeMux, cfg *apiConfig) {
 	mux.HandleFunc("GET /admin/metrics", metricshandlerWrapped(cfg))
 	mux.HandleFunc("POST /admin/reset", resetMetricshandlerWrapperd(cfg))
 	mux.HandleFunc("GET /api/healthz", healthzHandler)
-	mux.HandleFunc("POST /api/validate_chirp", validateChirpHandler)
 	mux.HandleFunc("POST /api/users", postUsersHandlerWrapped(cfg))
+	mux.HandleFunc("POST /api/chirps", postChirphandlerWrapped(cfg))
+	mux.HandleFunc("GET /api/chirps", getAllChirpsHandlerWrapped(cfg))
+	mux.HandleFunc("GET /api/chirps/{id}", getChirspHandlerWrapped(cfg))
 }

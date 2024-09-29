@@ -7,7 +7,7 @@ import (
 )
 
 
-func CreateChirp(body *string) *customErrors.CodedError {
+func ValidateChirp(body *string) *customErrors.CodedError {
 	maxChirpLength := 140
 	if len(*body) > maxChirpLength {
 		e := customErrors.CodedError{
