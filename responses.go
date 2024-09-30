@@ -5,13 +5,29 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/niccolot/Chirpy/internal/customErrors"
 )
 
 type errResponse struct {
 	Error string `json:"error"`
 	StatusCode int `json:"status code"`
+}
+
+type respSuccUserPostData struct {
+	Id uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email string `json:"email"`
+}
+
+type respSuccLoginPostData struct {
+	Id        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string `json:"email"`
 }
 
 func respondWithError(w *http.ResponseWriter, err *customErrors.CodedError) {
@@ -72,13 +88,39 @@ func respSuccesfullChirpsGet(w *http.ResponseWriter, chirp *Chirp) {
 }
 
 func respSuccesfullUserPost(w *http.ResponseWriter, user *User) {
-	dat, errMarshal := json.Marshal(user)
+	respStruct := respSuccUserPostData{
+		Id: user.Id,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email: user.Email,
+	}
+
+	dat, errMarshal := json.Marshal(respStruct)
 	if errMarshal != nil {
 		(*w).WriteHeader(http.StatusInternalServerError)
 		log.Fatalf(fmt.Sprintf("Error marshalling JSON: %v", errMarshal))
 	}
 
 	(*w).WriteHeader(http.StatusCreated)
+	(*w).Header().Set("Content-Type", "application/json")
+	(*w).Write(dat)
+}
+
+func respSuccesfullLoginPost(w *http.ResponseWriter, user *User) {
+	respStruct := respSuccLoginPostData{
+		Id: user.Id,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email: user.Email,
+	}
+
+	dat, errMarshal := json.Marshal(respStruct)
+	if errMarshal != nil {
+		(*w).WriteHeader(http.StatusInternalServerError)
+		log.Fatalf(fmt.Sprintf("Error marshalling JSON: %v", errMarshal))
+	}
+
+	(*w).WriteHeader(http.StatusOK)
 	(*w).Header().Set("Content-Type", "application/json")
 	(*w).Write(dat)
 }

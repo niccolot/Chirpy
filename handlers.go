@@ -7,6 +7,7 @@ import (
 	"text/template"
 
 	"github.com/google/uuid"
+	"github.com/niccolot/Chirpy/internal/auth"
 	"github.com/niccolot/Chirpy/internal/customErrors"
 	"github.com/niccolot/Chirpy/internal/database"
 )
@@ -209,7 +210,18 @@ func postUsersHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http
 			return 
 		}
 
-		user, errUser := cfg.DB.CreateUser(r.Context(), req.Email)
+		hashed_password, errHashing := auth.HashPassword(req.Password)
+		if errHashing != nil {
+			respondWithError(&w, errHashing)
+			return
+		}
+
+		userPars := &database.CreateUserParams{
+			Email: req.Email,
+			HashedPassword: hashed_password,
+		}
+
+		user, errUser := cfg.DB.CreateUser(r.Context(), *userPars)
 		if errUser != nil {
 			e := customErrors.CodedError{
 				Message: fmt.Errorf("failed to create user: %w, function: %s", 
@@ -228,4 +240,48 @@ func postUsersHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http
 	}
 
 	return postUsersHandler
+}
+
+func postLoginHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	postLoginhandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		decoder := json.NewDecoder(r.Body)
+		req := loginPostRequest{}
+		errDecode := decoder.Decode(&req)
+		if errDecode != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to decode request: %w, function: %s", 
+					errDecode, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		user, errUser := cfg.DB.FindUserByEmail(r.Context(), req.Email)
+		if errUser != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to find user: %w, function: %s", 
+					errUser, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		check := auth.CheckPasswordHash(req.Password, user.HashedPassword)
+		if check != nil {
+			respondWithError(&w, check)
+			return 
+		}
+
+		u := User{}
+		u.mapUser(&user)
+
+		respSuccesfullLoginPost(&w, &u)
+	}
+
+	return postLoginhandler
 }

@@ -13,6 +13,7 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string `json:"email"`
+	HashedPassword string `json:"hashed_password"`
 }
 
 func (u *User) mapUser(user *database.User) {
@@ -20,6 +21,7 @@ func (u *User) mapUser(user *database.User) {
 	u.CreatedAt = user.CreatedAt
 	u.UpdatedAt = user.UpdatedAt
 	u.Email = user.Email
+	u.HashedPassword = user.HashedPassword
 }
 
 type TemplateData struct {
