@@ -10,6 +10,7 @@ import (
 	"github.com/niccolot/Chirpy/internal/customErrors"
 )
 
+
 type errResponse struct {
 	Error string `json:"error"`
 	StatusCode int `json:"status code"`
@@ -29,6 +30,10 @@ type respSuccLoginPostData struct {
 	Email     string `json:"email"`
 	Token string `json:"token"`
 	RefreshToken string `json:"refresh_token"`
+}
+
+type respSuccRefreshPostData struct {
+	Token string `json:"token"`
 }
 
 func respondWithError(w *http.ResponseWriter, err *customErrors.CodedError) {
@@ -125,4 +130,24 @@ func respSuccesfullLoginPost(w *http.ResponseWriter, user *User, jwt *string, re
 	(*w).WriteHeader(http.StatusOK)
 	(*w).Header().Set("Content-Type", "application/json")
 	(*w).Write(dat)
+}
+
+func respSuccesfullRefreshPost(w *http.ResponseWriter, token string) {
+	respStruct := respSuccRefreshPostData{
+		Token: token,
+	}
+
+	dat, errMarshal := json.Marshal(respStruct)
+	if errMarshal != nil {
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
+	}
+
+	(*w).WriteHeader(http.StatusOK)
+	(*w).Header().Set("Content-Type", "application/json")
+	(*w).Write(dat)
+}
+
+func respSuccesfullRevokePost(w *http.ResponseWriter) {
+	(*w).WriteHeader(http.StatusNoContent)
 }

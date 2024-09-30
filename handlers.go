@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"text/template"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/niccolot/Chirpy/internal/auth"
@@ -289,14 +288,7 @@ func postLoginHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http
 			return 
 		}
 
-		var expiresInSeconds int
-		if req.ExpiresInSeconds == 0 || req.ExpiresInSeconds > 60*60{
-			expiresInSeconds = 60*60 // max duration of jwt is 1 hour
-		} else {
-			expiresInSeconds = req.ExpiresInSeconds
-		}
-
-		token, errToken := auth.MakeJWT(user.ID, cfg.JWTSecret, time.Duration(expiresInSeconds))
+		token, errToken := auth.MakeJWT(user.ID, cfg.JWTSecret)
 		if errToken != nil {
 			e := customErrors.CodedError{
 				Message: fmt.Errorf("failed to generate jwt: %w, function: %s", 
@@ -308,11 +300,28 @@ func postLoginHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http
 			return 
 		}
 
-		refreshToken, errRefresh := auth.MakeRefreshToken()
+		refreshTokenString, errRefresh := auth.MakeRefreshToken()
 		if errRefresh != nil {
 			e := customErrors.CodedError{
-				Message: fmt.Errorf("failed to generate refresh token: %w, function: %s", 
+				Message: fmt.Errorf("failed to generate refresh token string: %w, function: %s", 
 					errRefresh, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		refreshTokensPars := &database.CreateRefreshTokenParams{
+			Token: refreshTokenString,
+			UserID: user.ID,
+		}
+
+		_, errRefreshObj := cfg.DB.CreateRefreshToken(r.Context(), *refreshTokensPars)
+		if errRefreshObj != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to generate refresh token object: %w, function: %s", 
+					errRefreshObj, 
 					customErrors.GetFunctionName()).Error(),
 				StatusCode: http.StatusInternalServerError,
 			}
@@ -323,8 +332,61 @@ func postLoginHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http
 		u := User{}
 		u.mapUser(&user)
 
-		respSuccesfullLoginPost(&w, &u, &token, &refreshToken)
+		respSuccesfullLoginPost(&w, &u, &token, &refreshTokenString)
 	}
 
 	return postLoginhandler
+}
+
+func postRefreshHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	postRefreshHandler := func(w http.ResponseWriter, r *http.Request) {
+		token, errHeader := auth.GetBearerToken(r.Header)
+		if errHeader != nil {
+			respondWithError(&w, errHeader)
+			return
+		}
+
+		userId, errSearch := cfg.DB.GetUserFromRefreshToken(r.Context(), token)
+		if errSearch != nil {
+			e := customErrors.CodedError{
+				Message: "invalid jwt",
+				StatusCode: http.StatusUnauthorized,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		newToken, errToken := auth.MakeJWT(userId, cfg.JWTSecret)
+		if errToken != nil {
+			respondWithError(&w, errToken)
+		}
+
+		respSuccesfullRefreshPost(&w, newToken)
+	}
+
+	return postRefreshHandler
+}
+
+func postRevokeHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	postRevokeHandler := func(w http.ResponseWriter, r *http.Request) {
+		token, errHeader := auth.GetBearerToken(r.Header)
+		if errHeader != nil {
+			respondWithError(&w, errHeader)
+			return
+		}
+
+		errRevoke := cfg.DB.RevokeToken(r.Context(), token)
+		if errRevoke != nil {
+			e := customErrors.CodedError{
+				Message: "token not in database",
+				StatusCode: http.StatusNotFound,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		respSuccesfullRevokePost(&w)
+	}
+
+	return postRevokeHandler
 }

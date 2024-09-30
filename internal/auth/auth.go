@@ -42,8 +42,9 @@ func CheckPasswordHash(password string, hash string) *customErrors.CodedError {
 	return nil
 }
 
-func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, *customErrors.CodedError) {
+func MakeJWT(userID uuid.UUID, tokenSecret string) (string, *customErrors.CodedError) {
 	currTime := time.Now().UTC()
+	expiresIn := 60*60 // 1 hour jwt duration
 	token := jwt.NewWithClaims(
 		jwt.SigningMethodHS256,
 		jwt.RegisteredClaims{
