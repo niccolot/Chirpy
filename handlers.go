@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"text/template"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/niccolot/Chirpy/internal/auth"
@@ -98,18 +99,29 @@ func postChirphandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http
 			return 
 		}
 
-		errValidation := ValidateChirp(&req.Body)
-		if errValidation != nil {
-			respondWithError(&w, errValidation)
+		token, errGetToken := auth.GetBearerToken(r.Header)
+		if errGetToken != nil {
+			respondWithError(&w, errGetToken)
 			return 
 		}
 
-		chirpparams := database.CreateChirpParams{
-			Body: req.Body,
-			UserID: req.UserId,
+		id, errValidateAuthor := auth.ValidateJWT(token, cfg.JWTSecret)
+		if errValidateAuthor != nil {
+			respondWithError(&w, errValidateAuthor)
 		}
 
-		chirp, errChirp := cfg.DB.CreateChirp(r.Context(), chirpparams)
+		errChirpValidation := ValidateChirp(&req.Body)
+		if errChirpValidation != nil {
+			respondWithError(&w, errChirpValidation)
+			return 
+		}
+
+		chirpPars := database.CreateChirpParams{
+			Body: req.Body,
+			UserID: id,
+		}
+
+		chirp, errChirp := cfg.DB.CreateChirp(r.Context(), chirpPars)
 		if errChirp != nil {
 			e := customErrors.CodedError{
 				Message: fmt.Errorf("failed to create chirp: %w, function: %s", 
@@ -277,10 +289,41 @@ func postLoginHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http
 			return 
 		}
 
+		var expiresInSeconds int
+		if req.ExpiresInSeconds == 0 || req.ExpiresInSeconds > 60*60{
+			expiresInSeconds = 60*60 // max duration of jwt is 1 hour
+		} else {
+			expiresInSeconds = req.ExpiresInSeconds
+		}
+
+		token, errToken := auth.MakeJWT(user.ID, cfg.JWTSecret, time.Duration(expiresInSeconds))
+		if errToken != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to generate jwt: %w, function: %s", 
+					errToken, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		refreshToken, errRefresh := auth.MakeRefreshToken()
+		if errRefresh != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to generate refresh token: %w, function: %s", 
+					errRefresh, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
 		u := User{}
 		u.mapUser(&user)
 
-		respSuccesfullLoginPost(&w, &u)
+		respSuccesfullLoginPost(&w, &u, &token, &refreshToken)
 	}
 
 	return postLoginhandler

@@ -1,9 +1,15 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
 	"github.com/niccolot/Chirpy/internal/customErrors"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -34,4 +40,120 @@ func CheckPasswordHash(password string, hash string) *customErrors.CodedError {
 	}
 
 	return nil
+}
+
+func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, *customErrors.CodedError) {
+	currTime := time.Now().UTC()
+	token := jwt.NewWithClaims(
+		jwt.SigningMethodHS256,
+		jwt.RegisteredClaims{
+			Issuer: "chirpy",
+			IssuedAt: jwt.NewNumericDate(currTime),
+			ExpiresAt: jwt.NewNumericDate(currTime.Add(time.Duration(expiresIn)*time.Second)),
+			Subject: string(userID.String()),
+		},
+	)
+
+	signedToken, errSign := token.SignedString([]byte(tokenSecret))
+	if errSign != nil {
+		e := customErrors.CodedError{
+			Message: fmt.Errorf("failed to sign jwt: %w, function: %s", 
+				errSign, 
+				customErrors.GetFunctionName()).Error(),
+			StatusCode: http.StatusInternalServerError,
+		}
+		
+		return "", &e
+	}
+
+	return signedToken, nil
+}
+
+func ValidateJWT(tokenString string, tokenSecret string) (uuid.UUID, *customErrors.CodedError) {
+	token, errParseToken := jwt.ParseWithClaims(tokenString, 
+		&jwt.RegisteredClaims{}, 
+		func(token *jwt.Token) (interface{}, error) {
+			_, ok := token.Method.(*jwt.SigningMethodHMAC)
+			if !ok {
+				errMethod := customErrors.CodedError{
+					Message: fmt.Errorf("unexpected signing method: %v, function: %s", 
+						token.Header["alg"],
+						customErrors.GetFunctionName()).Error(),
+					StatusCode: http.StatusInternalServerError,
+				}
+
+				return uuid.UUID{}, &errMethod
+			}
+
+			return []byte(tokenSecret), nil
+		})
+
+	if errParseToken != nil {
+		e := customErrors.CodedError{
+			Message: fmt.Errorf("failed to parse token: %w, function: %s", 
+				errParseToken,
+				customErrors.GetFunctionName()).Error(),
+			StatusCode: http.StatusUnauthorized,
+		}
+		return uuid.UUID{}, &e
+	}
+
+	errValid := token.Claims.Valid()
+	if errValid != nil {
+		e := customErrors.CodedError{
+			Message: fmt.Errorf("invalid token: %w, function: %s", 
+				errValid,
+				customErrors.GetFunctionName()).Error(),
+			StatusCode: http.StatusUnauthorized,
+		}
+
+		return uuid.UUID{}, &e
+	}
+
+	id, errParseUUID := uuid.Parse(token.Claims.(*jwt.RegisteredClaims).Subject)
+    if errParseUUID != nil {
+        e := customErrors.CodedError{
+			Message: fmt.Errorf("failed to parse string into UUID: %w, function: %s", 
+				errValid,
+				customErrors.GetFunctionName()).Error(),
+			StatusCode: http.StatusInternalServerError,
+		}
+
+		return uuid.UUID{}, &e
+    }
+
+	 return  id, nil	
+}
+
+func GetBearerToken(headers http.Header) (string, *customErrors.CodedError) {
+	token := strings.TrimPrefix(headers.Get("Authorization"), "Bearer ")
+	if token == "" {
+		e := customErrors.CodedError{
+			Message: "request header must contain the jwt",
+			StatusCode: http.StatusBadRequest,
+		}
+
+		return "", &e
+	}
+
+	return token, nil
+}
+
+func MakeRefreshToken() (string, *customErrors.CodedError) {
+	randomSlice := make([]byte, 32)
+		_, errRand := rand.Read(randomSlice)
+		if errRand != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to generate refresh token: %w, function: %s", 
+					errRand, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+
+			return "", &e
+		}
+
+		refreshToken := hex.EncodeToString(randomSlice)
+
+		return refreshToken, nil
 }

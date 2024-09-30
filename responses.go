@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 
@@ -28,6 +27,8 @@ type respSuccLoginPostData struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string `json:"email"`
+	Token string `json:"token"`
+	RefreshToken string `json:"refresh_token"`
 }
 
 func respondWithError(w *http.ResponseWriter, err *customErrors.CodedError) {
@@ -40,11 +41,10 @@ func respondWithError(w *http.ResponseWriter, err *customErrors.CodedError) {
 	}
 
 	fmt.Printf("error occurred: %s, status code: %d\n", message, code)
-	(*w).WriteHeader(code)
-	dat, errMashal := json.Marshal(errResp)
-	if errMashal != nil {
-		(*w).WriteHeader(http.StatusInternalServerError)
-		log.Fatalf(fmt.Sprintf("Error marshalling JSON: %v", errMashal))
+	dat, errMarshal := json.Marshal(errResp)
+	if errMarshal != nil {
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
 	}
 
 	(*w).WriteHeader(err.StatusCode)
@@ -54,8 +54,8 @@ func respondWithError(w *http.ResponseWriter, err *customErrors.CodedError) {
 func respSuccesfullChirpPost(w *http.ResponseWriter, chirp *Chirp) {
 	dat, errMarshal := json.Marshal(chirp)
 	if errMarshal != nil {
-		(*w).WriteHeader(http.StatusInternalServerError)
-		log.Fatalf(fmt.Sprintf("Error marshalling JSON: %v", errMarshal))
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
 	}
 
 	(*w).WriteHeader(http.StatusCreated)
@@ -66,8 +66,8 @@ func respSuccesfullChirpPost(w *http.ResponseWriter, chirp *Chirp) {
 func respSuccesfullChirpsAllGet(w *http.ResponseWriter, chirps []Chirp) {
 	dat, errMarshal := json.Marshal(chirps)
 	if errMarshal != nil {
-		(*w).WriteHeader(http.StatusInternalServerError)
-		log.Fatalf(fmt.Sprintf("Error marshalling JSON: %v", errMarshal))
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
 	}
 
 	(*w).WriteHeader(http.StatusOK)
@@ -78,8 +78,8 @@ func respSuccesfullChirpsAllGet(w *http.ResponseWriter, chirps []Chirp) {
 func respSuccesfullChirpsGet(w *http.ResponseWriter, chirp *Chirp) {
 	dat, errMarshal := json.Marshal(chirp)
 	if errMarshal != nil {
-		(*w).WriteHeader(http.StatusInternalServerError)
-		log.Fatalf(fmt.Sprintf("Error marshalling JSON: %v", errMarshal))
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
 	}
 
 	(*w).WriteHeader(http.StatusOK)
@@ -97,8 +97,8 @@ func respSuccesfullUserPost(w *http.ResponseWriter, user *User) {
 
 	dat, errMarshal := json.Marshal(respStruct)
 	if errMarshal != nil {
-		(*w).WriteHeader(http.StatusInternalServerError)
-		log.Fatalf(fmt.Sprintf("Error marshalling JSON: %v", errMarshal))
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
 	}
 
 	(*w).WriteHeader(http.StatusCreated)
@@ -106,18 +106,20 @@ func respSuccesfullUserPost(w *http.ResponseWriter, user *User) {
 	(*w).Write(dat)
 }
 
-func respSuccesfullLoginPost(w *http.ResponseWriter, user *User) {
+func respSuccesfullLoginPost(w *http.ResponseWriter, user *User, jwt *string, refreshToken *string) {
 	respStruct := respSuccLoginPostData{
 		Id: user.Id,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 		Email: user.Email,
+		Token: *jwt,
+		RefreshToken: *refreshToken,
 	}
 
 	dat, errMarshal := json.Marshal(respStruct)
 	if errMarshal != nil {
-		(*w).WriteHeader(http.StatusInternalServerError)
-		log.Fatalf(fmt.Sprintf("Error marshalling JSON: %v", errMarshal))
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
 	}
 
 	(*w).WriteHeader(http.StatusOK)

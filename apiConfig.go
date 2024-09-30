@@ -17,6 +17,7 @@ type apiConfig struct {
 	DB *database.Queries
 	FileserverHits atomic.Int32
 	Platform string
+	JWTSecret string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -35,7 +36,7 @@ func NewAPIConfig(db *sql.DB) (*apiConfig, *customErrors.CodedError) {
 			Message: fmt.Errorf("error loading environment variables: %w, function: %s",
 				errEnv,
 				customErrors.GetFunctionName()).Error(),
-			StatusCode: 500,
+			StatusCode: http.StatusInternalServerError,
 		}
 		return &apiConfig{}, &e
 	}
@@ -46,6 +47,8 @@ func NewAPIConfig(db *sql.DB) (*apiConfig, *customErrors.CodedError) {
 	cfg.DB = dbQueries
 	platform := os.Getenv("PLATFORM")
 	cfg.Platform = platform
+	secret := os.Getenv("JWT_SECRET")
+	cfg.JWTSecret = secret
 
 	return cfg, nil
 }
