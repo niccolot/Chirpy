@@ -11,6 +11,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 	"github.com/niccolot/Chirpy/internal/customErrors"
+	"github.com/niccolot/Chirpy/internal/database"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -158,3 +159,10 @@ func MakeRefreshToken() (string, *customErrors.CodedError) {
 
 		return refreshToken, nil
 }
+
+func CheckValidityRefreshToken(tokenObj *database.RefreshToken) bool {
+	notExpired := time.Now().Format("2006-01-02 15:04:05") <= tokenObj.ExpiresAt
+	notRevoked :=  !tokenObj.RevokedAt.Valid
+	
+	return notExpired && notRevoked  
+} 

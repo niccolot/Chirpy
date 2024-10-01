@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"text/template"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/niccolot/Chirpy/internal/auth"
@@ -312,9 +313,12 @@ func postLoginHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http
 			return 
 		}
 
+		expiresAt := time.Now().Add(60 * 24 * time.Hour)
+
 		refreshTokensPars := &database.CreateRefreshTokenParams{
 			Token: refreshTokenString,
 			UserID: user.ID,
+			ExpiresAt: expiresAt.Format("2006-01-02 15:04:05"),
 		}
 
 		_, errRefreshObj := cfg.DB.CreateRefreshToken(r.Context(), *refreshTokensPars)
@@ -344,6 +348,26 @@ func postRefreshHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *ht
 		if errHeader != nil {
 			respondWithError(&w, errHeader)
 			return
+		}
+
+		tokenObj, errObj := cfg.DB.GetRefreshToken(r.Context(), token)
+		if errObj != nil {
+			e := customErrors.CodedError{
+				Message: "failed to retrieve refresh token from database",
+				StatusCode: http.StatusNotFound,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		valid := auth.CheckValidityRefreshToken(&tokenObj)
+		if !valid {
+			e := customErrors.CodedError{
+				Message: "invalid refresh token",
+				StatusCode: http.StatusUnauthorized,
+			}
+			respondWithError(&w, &e)
+			return 
 		}
 
 		userId, errSearch := cfg.DB.GetUserFromRefreshToken(r.Context(), token)

@@ -10,7 +10,7 @@ VALUES (
 RETURNING *;
 
 -- name: Reset :exec
-DELETE FROM users;
+DELETE FROM users CASCADE;
 
 -- name: FindUserByEmail :one
 SELECT * FROM users

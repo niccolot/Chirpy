@@ -58,7 +58,7 @@ func (q *Queries) FindUserByEmail(ctx context.Context, email string) (User, erro
 }
 
 const reset = `-- name: Reset :exec
-DELETE FROM users
+DELETE FROM users CASCADE
 `
 
 func (q *Queries) Reset(ctx context.Context) error {
