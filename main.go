@@ -1,56 +1,42 @@
 package main
 
 import (
+	"database/sql"
+	"fmt"
+	"log"
 	"net/http"
-	"sync"
-    "fmt"
-    "os"
-    "flag"
-    "log"
-    "github.com/joho/godotenv"
-    "github.com/niccolot/Chirpy/internal/database"
+	"os"
+
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 func main() {
-    godotenv.Load()
-    jwtSecret := os.Getenv("JWT_SECRET")
-    polkaApiKey := os.Getenv("POLKA_API_KEY")
+	errEnv := godotenv.Load()
+	if errEnv != nil {
+		log.Fatalf(fmt.Sprintf("error loading environment variables: %v", errEnv))
+	}
 
-    mux := http.NewServeMux()
-    
-    cfg := apiConfig{
-        FileserverHits: 0,
-        mu: &sync.Mutex{},
-        JwtSecret: jwtSecret,
-        PolkaApiKey: polkaApiKey,
-    }
+	dbURL := os.Getenv("DB_URL")
+	db, errDB := sql.Open("postgres", dbURL)
+	if errDB != nil {
+		log.Fatalf(fmt.Sprintf("error creating APIconfig: %v", errDB))
+	}
+	
+	defer db.Close()
+	
+	cfg, errAPIConfig := NewAPIConfig(db)
+	if errAPIConfig != nil {
+		log.Fatalf(fmt.Sprintf("error creating APIconfig: %v", errAPIConfig))
+	}
 
-    debug := flag.Bool("debug", false, "Enable debug mode")
-	flag.Parse()
+	mux := http.NewServeMux()
 
-    if *debug {
-        fmt.Println("Debug mode enabled: Deleting database.json...")
-		err := os.Remove("database.json")
-		if err != nil {
-			if os.IsNotExist(err) {
-				fmt.Println("database.json does not exist, nothing to delete.")
-			} else {
-				log.Fatalf("Error deleting database.json: %v", err)
-			}
-		} else {
-			fmt.Println("database.json successfully deleted.")
-		}
-    }
+	server := &http.Server{
+		Handler: mux,
+		Addr: "localhost:8080",
+	}
 
-    db, err := database.NewDB("database.json")
-    if err != nil {
-        fmt.Println(fmt.Errorf("error creating database: %w", err).Error())
-    }
-
-    initMultiplexer(mux, &cfg, db)
-    server := http.Server{
-        Handler: mux,
-        Addr: "localhost:8080",
-    }
-    server.ListenAndServe()   
+	initMultiplexer(mux, cfg)
+	server.ListenAndServe()
 }

@@ -1,89 +1,48 @@
-package  main
+package main
 
 import (
-    "net/http"
-	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/niccolot/Chirpy/internal/database"
 )
 
 
-type apiConfig struct {
-    FileserverHits int
-	mu *sync.Mutex
-	JwtSecret string
-	PolkaApiKey string
-}
-
-func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {	
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cfg.mu.Lock()
-		cfg.FileserverHits += 1
-		cfg.mu.Unlock()
-		next.ServeHTTP(w,r)
-	})
-
-	return handler
-}
-
-type chirpPostRequest struct {
-	Body string `json:"body"`
-}
-
-type userPostRequest struct {
-	Password string `json:"password"`
-	Email string `json:"email"`
-}
-
-type userPutRequest struct {
-	Password string `json:"password"`
-	Email string `json:"email"`
-}
-
-type loginPostRequest struct {
-	Password string `json:"password"`
-	Email string `json:"email"`
-	ExpiresInSeconds int `json:"expires_in_seconds"`
-}
-
-type errResponse struct {
-	Error string `json:"error"`
-	StatusCode int `json:"status code"`
-}
-
-type succesfullChirpPostResponse struct {
-	Id int `json:"id"`
-	CleanedBody string `json:"body"`
-	AuthorId int `json:"author_id"`
-}
-
-type succesfullUserPostResponse struct {
-	Id int `json:"id"`
-	Email string `json:"email"`
-	IsChirpyRed bool `json:"is_chirpy_red"`
-}
-
-type succesfullUserPutResponse struct {
-	Id int `json:"id"`
-	Email string `json:"email"`
-}
-
-type succesfullLoginPostResponse struct {
-	Id int `json:"id"`
-	Email string `json:"email"`
-	JWT string `json:"token"`
-	RefreshToken string `json:"refresh_token"`
+type User struct {
+	Id        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string `json:"email"`
+	HashedPassword string `json:"hashed_password"`
 	IsChirpyred bool `json:"is_chirpy_red"`
 }
 
-type succesfullRefreshPost struct {
-	Token string `json:"token"`
-	RefreshToken string `json:"refresh_token"`
+func (u *User) mapUser(user *database.User) {
+	u.Id = user.ID
+	u.CreatedAt = user.CreatedAt
+	u.UpdatedAt = user.UpdatedAt
+	u.Email = user.Email
+	u.HashedPassword = user.HashedPassword
+	u.IsChirpyred = user.IsChirpyRed
 }
 
-type polkaWebhooksPostRequest struct {
-	Event string `json:"event"`
-	Data polkaWebhooksData `json:"data"`
+type TemplateData struct {
+	FileserverHits int32
 }
 
-type polkaWebhooksData struct {
-	UserId int `json:"user_id"`
+type Chirp struct {
+	Id        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body     string `json:"body"`
+	UserId uuid.UUID `json:"user_id"`
 }
+
+func (c *Chirp) mapChirp(chirp *database.Chirp) {
+	c.Id = chirp.ID
+	c.CreatedAt = chirp.CreatedAt
+	c.UpdatedAt = chirp.UpdatedAt
+	c.Body = chirp.Body
+	c.UserId = chirp.UserID
+}
+

@@ -1,7 +1,8 @@
-package errors
+package customErrors
 
 import (
 	"fmt"
+	"net/http"
 	"runtime"
 )
 
@@ -20,4 +21,11 @@ func GetFunctionName() string {
 	function := runtime.FuncForPC(pc)
 
 	return function.Name()
+}
+
+func ErrorMarshal(w *http.ResponseWriter, errMarshal error) {
+	(*w).WriteHeader(http.StatusInternalServerError)
+	fmt.Printf("Error marshalling JSON: %v", errMarshal)
+	(*w).WriteHeader(http.StatusInternalServerError)
+	(*w).Write(nil)
 }

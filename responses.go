@@ -1,14 +1,53 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
-	"encoding/json"
-	"github.com/niccolot/Chirpy/internal/errors"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/niccolot/Chirpy/internal/customErrors"
 )
 
 
-func respondWithError(w *http.ResponseWriter, err *errors.CodedError) {
+type errResponse struct {
+	Error string `json:"error"`
+	StatusCode int `json:"status code"`
+}
+
+type respSuccUserPostData struct {
+	Id uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email string `json:"email"`
+	IsChirpyRed bool `json:"is_chirpy_red"`
+}
+
+type respSuccUserPutData struct {
+	Id uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email string `json:"email"`
+	IsChirpyRed bool `json:"is_chirpy_red"`
+}
+
+type respSuccLoginPostData struct {
+	Id        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string `json:"email"`
+	Token string `json:"token"`
+	RefreshToken string `json:"refresh_token"`
+	IsChirpyRed bool `json:"is_chirpy_red"`
+}
+
+type respSuccRefreshPostData struct {
+	Token string `json:"token"`
+	RefreshToken string `json:"refresh_token"`
+}
+
+func respondWithError(w *http.ResponseWriter, err *customErrors.CodedError) {
 	message := err.Message
 	code := err.StatusCode
 	
@@ -18,126 +57,143 @@ func respondWithError(w *http.ResponseWriter, err *errors.CodedError) {
 	}
 
 	fmt.Printf("error occurred: %s, status code: %d\n", message, code)
-	(*w).WriteHeader(code)
-	dat, e := json.Marshal(errResp)
-	if e != nil {
-		fmt.Printf("Error marshalling JSON: %s", e)
-		return
+	dat, errMarshal := json.Marshal(errResp)
+	if errMarshal != nil {
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
 	}
 
+	(*w).WriteHeader(err.StatusCode)
 	(*w).Write(dat)
 }
 
-func respSuccesfullChirpPost(w *http.ResponseWriter, body string, id int, authorId int) {
-	succResp := succesfullChirpPostResponse{
-		Id: id,
-		CleanedBody: body,
-		AuthorId: authorId,
-	}
-	
-	dat, err := json.Marshal(succResp)
-	if err != nil {
-		(*w).WriteHeader(500)
-		fmt.Printf("Error marshalling JSON: %s", err)
-		return
+func respSuccesfullChirpPost(w *http.ResponseWriter, chirp *Chirp) {
+	dat, errMarshal := json.Marshal(chirp)
+	if errMarshal != nil {
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
 	}
 
-	(*w).WriteHeader(201)
+	(*w).WriteHeader(http.StatusCreated)
 	(*w).Header().Set("Content-Type", "application/json")
 	(*w).Write(dat)
 }
 
-func respSuccesfullChirpGet(w *http.ResponseWriter, dat *[]byte) {
-
-	(*w).WriteHeader(200)
-	(*w).Header().Set("Content-Type", "application/json")
-	(*w).Write(*dat)
-}
-
-func respSuccesfullChirpDelete(w *http.ResponseWriter) {
-	(*w).WriteHeader(204)
-}
-
-func respSuccesfullUserPost(w *http.ResponseWriter, email string, id int) {
-	succResp := succesfullUserPostResponse{
-		Id: id,
-		Email: email,
-		IsChirpyRed: false,
-	}
-	
-	dat, err := json.Marshal(succResp)
-	if err != nil {
-		(*w).WriteHeader(500)
-		fmt.Printf("Error marshalling JSON: %s", err)
-		return
+func respSuccesfullChirpPut(w *http.ResponseWriter, chirp *Chirp) {
+	dat, errMarshal := json.Marshal(chirp)
+	if errMarshal != nil {
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
 	}
 
-	(*w).WriteHeader(201)
+	(*w).WriteHeader(http.StatusOK)
 	(*w).Header().Set("Content-Type", "application/json")
 	(*w).Write(dat)
 }
 
-func respSuccesfullUserPut(w *http.ResponseWriter, email string, id int) {
-	succResp := succesfullUserPutResponse{
-		Id: id,
-		Email: email,
-	}
-	
-	dat, err := json.Marshal(succResp)
-	if err != nil {
-		(*w).WriteHeader(500)
-		fmt.Printf("Error marshalling JSON: %s", err)
-		return
+func respSuccesfullChirpsAllGet(w *http.ResponseWriter, chirps []Chirp) {
+	dat, errMarshal := json.Marshal(chirps)
+	if errMarshal != nil {
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
 	}
 
-	(*w).WriteHeader(200)
+	(*w).WriteHeader(http.StatusOK)
 	(*w).Header().Set("Content-Type", "application/json")
 	(*w).Write(dat)
 }
 
-func respSuccessfullLoginPost(w *http.ResponseWriter, email string, id int, signedToken string, refreshToken string, isChirpyRed bool) {
-	succResp := succesfullLoginPostResponse{
-		Id: id,
-		Email: email,
-		JWT: signedToken,
-		RefreshToken: refreshToken,
-		IsChirpyred: isChirpyRed,
+func respSuccesfullChirpsGet(w *http.ResponseWriter, chirp *Chirp) {
+	dat, errMarshal := json.Marshal(chirp)
+	if errMarshal != nil {
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
 	}
 
-	dat, err := json.Marshal(succResp)
-	if err != nil {
-		(*w).WriteHeader(500)
-		fmt.Printf("Error marshalling JSON: %s", err)
-		return
-	}
-
-	(*w).WriteHeader(200)
+	(*w).WriteHeader(http.StatusOK)
 	(*w).Header().Set("Content-Type", "application/json")
 	(*w).Write(dat)
 }
 
-func respondSuccesfullRefreshPost(w *http.ResponseWriter, token string, refreshToken string) {
-	succResp := succesfullRefreshPost{
+func respSuccesfullUserPost(w *http.ResponseWriter, user *User) {
+	respStruct := respSuccUserPostData{
+		Id: user.Id,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email: user.Email,
+		IsChirpyRed: user.IsChirpyred,
+	}
+
+	dat, errMarshal := json.Marshal(respStruct)
+	if errMarshal != nil {
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
+	}
+
+	(*w).WriteHeader(http.StatusCreated)
+	(*w).Header().Set("Content-Type", "application/json")
+	(*w).Write(dat)
+}
+
+func respSuccesfullUserPut(w *http.ResponseWriter, user *User) {
+	respStruct := respSuccUserPutData{
+		Id: user.Id,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email: user.Email,
+		IsChirpyRed: user.IsChirpyred,
+	}
+
+	dat, errMarshal := json.Marshal(respStruct)
+	if errMarshal != nil {
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
+	}
+
+	(*w).WriteHeader(http.StatusOK)
+	(*w).Header().Set("Content-Type", "application/json")
+	(*w).Write(dat)
+}
+
+func respSuccesfullLoginPost(w *http.ResponseWriter, user *User, jwt *string, refreshToken *string) {
+	respStruct := respSuccLoginPostData{
+		Id: user.Id,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email: user.Email,
+		Token: *jwt,
+		RefreshToken: *refreshToken,
+		IsChirpyRed: user.IsChirpyred,
+	}
+
+	dat, errMarshal := json.Marshal(respStruct)
+	if errMarshal != nil {
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
+	}
+
+	(*w).WriteHeader(http.StatusOK)
+	(*w).Header().Set("Content-Type", "application/json")
+	(*w).Write(dat)
+}
+
+func respSuccesfullRefreshPost(w *http.ResponseWriter, token string, refreshToken string) {
+	respStruct := respSuccRefreshPostData{
 		Token: token,
 		RefreshToken: refreshToken,
 	}
 
-	dat, err := json.Marshal(succResp)
-	if err != nil {
-		(*w).WriteHeader(500)
-		fmt.Printf("Error marshalling JSON: %s", err)
-		return
+	dat, errMarshal := json.Marshal(respStruct)
+	if errMarshal != nil {
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
 	}
 
-	(*w).WriteHeader(200)
+	(*w).WriteHeader(http.StatusOK)
 	(*w).Header().Set("Content-Type", "application/json")
 	(*w).Write(dat)
 }
 
-func respSuccesfullRevokePost(w *http.ResponseWriter) {
-	(*w).WriteHeader(204)
-}
-
-func respSuccesfullPolkaWebhooksPost(w *http.ResponseWriter) {
-	(*w).WriteHeader(204)
+func respNoContent(w *http.ResponseWriter) {
+	(*w).WriteHeader(http.StatusNoContent)
 }

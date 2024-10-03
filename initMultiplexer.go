@@ -2,25 +2,24 @@ package main
 
 import (
 	"net/http"
-    "github.com/niccolot/Chirpy/internal/database"
 )
 
 
-func initMultiplexer(mux *http.ServeMux, cfg *apiConfig, db *database.DB) {
-	mux.Handle("/app/*", http.StripPrefix("/app/", cfg.middlewareMetricsInc(http.FileServer(http.Dir(".")))))
-    mux.HandleFunc("GET /api/healthz", healthzHandler)
-    mux.HandleFunc("GET /admin/metrics/*", metricsHandlerWrapped(cfg))
-    mux.HandleFunc("/api/reset", func (w http.ResponseWriter, r *http.Request) {
-        cfg.FileserverHits = 0
-    })
-    mux.HandleFunc("POST /api/chirps", postChirpHandlerWrapped(db, cfg))
-    mux.HandleFunc("GET /api/chirps", getChirpsHandlerWrapped(db))
-    mux.HandleFunc("GET /api/chirps/{id}", getChirpIDHandlerWrapped(db))
-    mux.HandleFunc("POST /api/users", postUserHandlerWrapped(db))
-    mux.HandleFunc("PUT /api/users", putUserhandlerWrapped(db, cfg))
-    mux.HandleFunc("POST /api/login", postLoginHandlerWrapped(db, cfg))
-    mux.HandleFunc("POST /api/refresh", postRefreshHandlerWrapped(db, cfg))
-    mux.HandleFunc("POST /api/revoke", postRevokeHandlerWrapped(db))
-    mux.HandleFunc("DELETE /api/chirps/{chirpId}", deleteChirpIDHandlerWrapped(db, cfg))
-    mux.HandleFunc("POST /api/polka/webhooks", postPolkaWebhooksHandlerWrapped(db, cfg))
-} 
+func initMultiplexer(mux *http.ServeMux, cfg *apiConfig) {
+	mux.Handle("/app/*", cfg.middlewareMetricsInc(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
+	mux.HandleFunc("GET /admin/metrics", metricshandlerWrapped(cfg))
+	mux.HandleFunc("POST /admin/reset", resetMetricshandlerWrapperd(cfg))
+	mux.HandleFunc("GET /api/healthz", healthzHandler)
+	mux.HandleFunc("POST /api/users", postUsersHandlerWrapped(cfg))
+	mux.HandleFunc("POST /api/chirps", postChirphandlerWrapped(cfg))
+	mux.HandleFunc("GET /api/chirps", getAllChirpsHandlerWrapped(cfg))
+	mux.HandleFunc("GET /api/chirps/{id}", getChirspHandlerWrapped(cfg))
+	mux.HandleFunc("DELETE /api/chirps/{id}", deleteChirpsHandlerWrapped(cfg))
+	mux.HandleFunc("POST /api/login", postLoginHandlerWrapped(cfg))
+	mux.HandleFunc("POST /api/refresh", postRefreshHandlerWrapped(cfg))
+	mux.HandleFunc("POST /api/revoke", postRevokeHandlerWrapped(cfg))
+	mux.HandleFunc("PUT /api/users", putUsersHandlerWrapped(cfg))
+	mux.HandleFunc("POST /api/polka/webhooks", postPolkaWebhookHandlerWrapped(cfg))
+	mux.HandleFunc("DELETE /api/users/{id}", deleteUsersHandlerWrapped(cfg))
+	mux.HandleFunc("PUT /api/chirps/{id}", putChirpsHandlerWrapped(cfg))
+}

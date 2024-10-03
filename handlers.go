@@ -1,47 +1,51 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"net/http"
-	"strconv"
-	"strings"
+	"text/template"
 	"time"
-	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/google/uuid"
+	"github.com/niccolot/Chirpy/internal/auth"
+	"github.com/niccolot/Chirpy/internal/customErrors"
 	"github.com/niccolot/Chirpy/internal/database"
-	"github.com/niccolot/Chirpy/internal/errors"
-	"golang.org/x/crypto/bcrypt"
 )
 
 
 func healthzHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type: text/plain", "charset=utf-8")
-	w.WriteHeader(200)
-	w.Write([]byte("OK"))
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("200 OK"))
 }
 
-func metricsHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
-
-	metricsHandler := func (w http.ResponseWriter, r *http.Request) {
+func metricshandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	metricsHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: text/html", "charset=utf-8")
 		tmpl, err := template.ParseFiles("index_admin.html")
 		if err != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("internal Server Error: %w, function: %s", err, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("internal Server Error: %w, function: %s", 
+					err, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
 			}
 			respondWithError(&w, &e)
 			return
 		}
-	
-		err = tmpl.Execute(w, cfg)
+		
+		data := &TemplateData{
+			FileserverHits: cfg.FileserverHits.Load(),
+		}
+
+		err = tmpl.Execute(w, *data)
 		if err != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("error parsing template: %w, function: %s", err, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("error parsing template: %w, function: %s", 
+					err, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
 			}
 			respondWithError(&w, &e)
 			return
@@ -51,676 +55,733 @@ func metricsHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.R
 	return metricsHandler
 }
 
-func postChirpHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+func resetMetricshandlerWrapperd(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	resetMetricsHandler := func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Platform != "dev" {
+			e := customErrors.CodedError{
+				Message: "forbidden request",
+				StatusCode: http.StatusForbidden,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+
+		errDelete := cfg.DB.Reset(r.Context())
+		if errDelete != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("error executing reset request: %w, function: %s", 
+					errDelete,
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return
+		}
+	}
+
+	return resetMetricsHandler
+}
+
+func postChirphandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	postChirpHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		decoder := json.NewDecoder(r.Body)
 		req := chirpPostRequest{}
 		errDecode := decoder.Decode(&req)
 		if errDecode != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to decode request: %w, function: %s", errDecode, errors.GetFunctionName()).Error(),
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to decode request: %w, function: %s", 
+					errDecode, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
 			}
 			respondWithError(&w, &e)
 			return 
 		}
 
-		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		tokenObjPtr, errParseToken := jwt.ParseWithClaims(token, &jwt.RegisteredClaims{}, func(*jwt.Token) (interface{}, error) {
-			return []byte(cfg.JwtSecret), nil
-		})
-		if errParseToken != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("invalid token: %w", errParseToken).Error(),
-				StatusCode: 403,
+		token, errGetToken := auth.GetBearerToken(r.Header)
+		if errGetToken != nil {
+			respondWithError(&w, errGetToken)
+			return 
+		}
+
+		id, errValidateAuthor := auth.ValidateJWT(token, cfg.JWTSecret)
+		if errValidateAuthor != nil {
+			respondWithError(&w, errValidateAuthor)
+		}
+
+		errChirpValidation := ValidateChirp(&req.Body)
+		if errChirpValidation != nil {
+			respondWithError(&w, errChirpValidation)
+			return 
+		}
+
+		chirpPars := database.CreateChirpParams{
+			Body: req.Body,
+			UserID: id,
+		}
+
+		chirp, errChirp := cfg.DB.CreateChirp(r.Context(), chirpPars)
+		if errChirp != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to create chirp: %w, function: %s", 
+					errChirp, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
 			}
 			respondWithError(&w, &e)
-			return
-		}
-
-		userIdString, errGetID := tokenObjPtr.Claims.(*jwt.RegisteredClaims).GetSubject()		
-		if errGetID != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("error getting user id: %w, function: %s", errGetID, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
-			}
-			respondWithError(&w, &e)
-			return
-		}
-		
-		userId, errConversion := strconv.Atoi(userIdString)
-		if errConversion != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to convert userId from string to int: %w, function: %s", errConversion, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
-			}
-			respondWithError(&w, &e)
-			return 
-		}		
-
-		len, err := db.GetNumChirps()
-		if err != nil {
-			respondWithError(&w, err)
 			return 
 		}
 
-		chirp, err := db.CreateChirp(req.Body, userId)
-		if err != nil {
-			respondWithError(&w, err)
-			return 
-		}
+		c := Chirp{}
+		c.mapChirp(&chirp)
 
-		id := len+1
-
-		errSave := db.SaveChirp(&chirp, id)
-		if errSave != nil {
-			respondWithError(&w, errSave)
-			return 
-		}
-		
-		respSuccesfullChirpPost(&w, req.Body, id, userId)
+		respSuccesfullChirpPost(&w, &c)
 	}
-	
-	return postChirpHandler
-}
 
-func getChirpsHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http.Request) {
-	getChirpsHandler := func(w http.ResponseWriter, r *http.Request) {
+	return postChirpHandler
+} 
+
+func getAllChirpsHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	getAllChirpsHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		authorIdString := r.URL.Query().Get("author_id")
 		sorting := r.URL.Query().Get("sort")
-		var chirps []database.Chirp
-		var err *errors.CodedError
+
+		var authorId uuid.UUID
+		var errUUID error
+
 		if authorIdString != "" {
-			authorId, errAtoi := strconv.Atoi(authorIdString)
-			if errAtoi != nil {
-				e := errors.CodedError{
-					Message: fmt.Errorf("failed to convert string to int: %w, function: %s", errAtoi, errors.GetFunctionName()).Error(),
-					StatusCode: 500,
+			authorId, errUUID = uuid.Parse(authorIdString)
+			if errUUID != nil {
+				e := customErrors.CodedError{
+					Message: fmt.Errorf("error parsing uuid: %w, function: %s", 
+						errUUID, 
+						customErrors.GetFunctionName()).Error(),
+					StatusCode: http.StatusInternalServerError,
 				}
 				respondWithError(&w, &e)
-				return
-			}
-			chirps, err = db.GetChirpsFromAuthor(authorId, sorting)
-			if err != nil {
-				respondWithError(&w, err)
-				return 
-			}
-		} else {
-			chirps, err = db.GetChirps(sorting)
-			if err != nil {
-				respondWithError(&w, err)
 				return 
 			}
 		}
 		
-		dat, errMarshal := json.Marshal(chirps)
-		if errMarshal != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to marshal json: %w, function: %s", errMarshal, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
+
+		var chirpsArr []database.Chirp
+		var errChirps error
+
+		_, errSearchUser := cfg.DB.FindUserById(r.Context(), authorId)
+		if errSearchUser != nil || authorIdString == "" {
+			if sorting == "desc" {
+				chirpsArr, errChirps = cfg.DB.GetAllChirpsDesc(r.Context())
+			} else { // ASC is default option
+				chirpsArr, errChirps = cfg.DB.GetAllChirpsAsc(r.Context())
+			}
+		} else {
+			if sorting == "desc" {
+				chirpsArr, errChirps = cfg.DB.GetChirpsFromAuthorDesc(r.Context(), authorId)
+			} else {
+				chirpsArr, errChirps = cfg.DB.GetChirpsFromAuthorAsc(r.Context(), authorId)
+			}
+		}
+
+		if errChirps != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to get chirps: %w, function: %s", 
+					errChirps, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
 			}
 			respondWithError(&w, &e)
 			return 
 		}
-		
-		respSuccesfullChirpGet(&w, &dat)
+
+		cArr := make([]Chirp, len(chirpsArr))
+		for i, c := range chirpsArr {
+			cArr[i].mapChirp(&c)
+		}
+
+		respSuccesfullChirpsAllGet(&w, cArr)
+	}
+
+	return getAllChirpsHandler
+}
+
+func getChirspHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	getChirpsHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		id := r.PathValue("id")
+		uuid, errUUID := uuid.Parse(id)
+		if errUUID != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("error parsing uuid: %w, function: %s", 
+					errUUID, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		chirp, errChirp := cfg.DB.GetChirp(r.Context(), uuid)
+		if errChirp != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to get chirp: %w, function: %s", 
+					errUUID, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusNotFound,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		c := Chirp{}
+		c.mapChirp(&chirp)
+
+		respSuccesfullChirpsGet(&w, &c)
 	}
 
 	return getChirpsHandler
 }
 
-func getChirpIDHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http.Request) {
-	getChirpIDHandler := func(w http.ResponseWriter, r *http.Request) {
+func deleteChirpsHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	deleteChirpsHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
-		id, err := strconv.Atoi(r.PathValue("id"))
-		if err != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to convert string to int: %w, function: %s", err, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
-			}
-			respondWithError(&w, &e)
-			return
+		token, errTokenHeader := auth.GetBearerToken(r.Header)
+		if errTokenHeader != nil {
+			respondWithError(&w, errTokenHeader)
+			return 
 		}
 
-		chirp, errGet := db.GetChirpID(id)
-		if errGet != nil {
-			respondWithError(&w, errGet)
-			return
+		userId, errJWT := auth.ValidateJWT(token, cfg.JWTSecret)
+		if errJWT != nil {
+			respondWithError(&w, errJWT)
+			return 
 		}
 
-		dat, errMarshal := json.Marshal(chirp)
-		if errMarshal != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to marshal json: %w, function: %s", err, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
+		chirpId := r.PathValue("id")
+		chirpUUID, errUUID := uuid.Parse(chirpId)
+		if errUUID != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("error parsing uuid: %w, function: %s", 
+					errUUID, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
 			}
 			respondWithError(&w, &e)
 			return 
 		}
 
-		respSuccesfullChirpGet(&w, &dat)		
-	}
-
-	return getChirpIDHandler
-}
-
-func deleteChirpIDHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
-	deleteChirpIDHandler := func(w http.ResponseWriter, r *http.Request) {
-		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		tokenObjPtr, errParseToken := jwt.ParseWithClaims(token, &jwt.RegisteredClaims{}, func(*jwt.Token) (interface{}, error) {
-			return []byte(cfg.JwtSecret), nil
-		})
-		if errParseToken != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("invalid token: %w", errParseToken).Error(),
-				StatusCode: 403,
+		chirp, errFindChirp := cfg.DB.GetChirp(r.Context(), chirpUUID)
+		if errFindChirp != nil {
+			e := customErrors.CodedError{
+				Message: "chirp not found",
+				StatusCode: http.StatusNotFound,
 			}
 			respondWithError(&w, &e)
-			return
+			return 
 		}
 
-		userIdString, errGetID := tokenObjPtr.Claims.(*jwt.RegisteredClaims).GetSubject()		
-		if errGetID != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("error getting user id: %w, function: %s", errGetID, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
-			}
-			respondWithError(&w, &e)
-			return
-		}
+		errCompare := auth.CompareUUIDs(&userId, &chirp.UserID)
+		if errCompare != nil {
+			respondWithError(&w, errCompare)
+			return 
+		}	
 		
-		userId, errConversion := strconv.Atoi(userIdString)
-		if errConversion != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to convert userId from string to int: %w, function: %s", errConversion, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
+		delChirpParams := &database.DeleteChirpParams{
+			ID: chirp.ID,
+			UserID: userId,
+		}
+
+		errDelete := cfg.DB.DeleteChirp(r.Context(), *delChirpParams)
+		if errDelete != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to delete chirp %s: %w, fucntion: %s",
+					string(chirpId),
+					errDelete,
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+
+			respondWithError(&w, &e)
+			return 
+		}
+
+		respNoContent(&w)
+	}
+
+	return deleteChirpsHandler
+}
+
+func putChirpsHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	putChirpsHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		token, errTokenHeader := auth.GetBearerToken(r.Header)
+		if errTokenHeader != nil {
+			respondWithError(&w, errTokenHeader)
+			return 
+		}
+
+		userId, errJWT := auth.ValidateJWT(token, cfg.JWTSecret)
+		if errJWT != nil {
+			respondWithError(&w, errJWT)
+			return 
+		}
+
+		decoder := json.NewDecoder(r.Body)
+		req := chirpPutRequest{}
+		errDecode := decoder.Decode(&req)
+		if errDecode != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to decode request: %w, function: %s", 
+					errDecode, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
 			}
 			respondWithError(&w, &e)
 			return 
 		}
 
-		chirpId, errChirpId := strconv.Atoi(r.PathValue("chirpId"))
-		if errChirpId != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to convert string to int: %w, function: %s", errChirpId, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
+		chirp, errChirp := cfg.DB.GetChirp(r.Context(), req.ChirpId)
+		if errChirp != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to get chirps: %w, function: %s", 
+					errChirp, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
 			}
 			respondWithError(&w, &e)
-			return
+			return 
 		}
 
-		errDelete := db.DeleteChirp(chirpId, userId)
-		if errDelete != nil {
-			respondWithError(&w, errDelete)
+		errCompare := auth.CompareUUIDs(&userId, &chirp.UserID)
+		if errCompare != nil {
+			respondWithError(&w, errCompare)
+			return 
 		}
 
-		respSuccesfullChirpDelete(&w)
+		updateChirpParams := &database.UpdateChirpParams{
+			ID: req.ChirpId,
+			Body: req.Body,
+		}
+
+		errUpdate := cfg.DB.UpdateChirp(r.Context(), *updateChirpParams)
+		if errUpdate != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to update chirp: %w, function: %s", 
+					errUpdate, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+		}
+
+		chirp, errFind := cfg.DB.GetChirp(r.Context(), chirp.ID)
+		if errFind != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to retrieve updated chirp: %w, function: %s", 
+					errFind, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		c := Chirp{}
+		c.mapChirp(&chirp)
+
+		respSuccesfullChirpPut(&w, &c)
 	}
 
-	return deleteChirpIDHandler
+	return putChirpsHandler
 }
 
-func postUserHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http.Request) {
-	postUserHandler := func(w http.ResponseWriter, r *http.Request) {
+func postUsersHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	postUsersHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		decoder := json.NewDecoder(r.Body)
 		req := userPostRequest{}
 		errDecode := decoder.Decode(&req)
 		if errDecode != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to decode request: %w, function: %s", errDecode, errors.GetFunctionName()).Error(),
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to decode request: %w, function: %s", 
+					errDecode, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
 			}
 			respondWithError(&w, &e)
 			return 
 		}
 
-		user, err := db.CreateUser(req.Email, req.Password)
-		if err != nil {
-			respondWithError(&w, err)
-			return 
-		}
-
-		len, err := db.GetNumUsers()
-		if err != nil {
-			respondWithError(&w, err)
-			return 
-		}
-
-		id := len+1
-		errSave := db.SaveUser(&user, id)
-		if errSave != nil {
-			respondWithError(&w, errSave)
+		hashed_password, errHashing := auth.HashPassword(req.Password)
+		if errHashing != nil {
+			respondWithError(&w, errHashing)
 			return
 		}
-		
-		respSuccesfullUserPost(&w, req.Email, id)
+
+		userPars := &database.CreateUserParams{
+			Email: req.Email,
+			HashedPassword: hashed_password,
+		}
+
+		user, errUser := cfg.DB.CreateUser(r.Context(), *userPars)
+		if errUser != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to create user: %w, function: %s", 
+					errUser, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		u := User{}
+		u.mapUser(&user)
+
+		respSuccesfullUserPost(&w, &u)
 	}
 
-	return postUserHandler
+	return postUsersHandler
 }
 
-func postLoginHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
-	postLoginHandler := func(w http.ResponseWriter, r *http.Request) {
+func putUsersHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	putUsersHandlerWrapped := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		token, errTokenHeader := auth.GetBearerToken(r.Header)
+		if errTokenHeader != nil {
+			respondWithError(&w, errTokenHeader)
+			return 
+		}
+
+		userId, errJWT := auth.ValidateJWT(token, cfg.JWTSecret)
+		if errJWT != nil {
+			respondWithError(&w, errJWT)
+			return 
+		}
+
+		decoder := json.NewDecoder(r.Body)
+		req := userPutRequest{}
+		errDecode := decoder.Decode(&req)
+		if errDecode != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to decode request: %w, function: %s", 
+					errDecode, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		hashedPassword, errHash := auth.HashPassword(req.Password)
+		if errHash != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to hash new password: %w, function: %s", 
+					errHash, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+		}
+
+		updateUserPars := &database.UpdateUserParams{
+			ID: userId,
+			Email: req.Email,
+			HashedPassword: hashedPassword,
+		}
+
+		errUpdate := cfg.DB.UpdateUser(r.Context(), *updateUserPars)
+		if errUpdate != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to update user: %w, function: %s", 
+					errUpdate, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+		}
+
+		user, errUser := cfg.DB.FindUserByEmail(r.Context(), req.Email)
+		if errUser != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to retrieve updated user: %w, function: %s", 
+					errUser, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		u := User{}
+		u.mapUser(&user)
+
+		respSuccesfullUserPut(&w, &u)
+	}
+
+	return putUsersHandlerWrapped
+}
+
+func deleteUsersHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	deleteUsersHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		token, errTokenHeader := auth.GetBearerToken(r.Header)
+		if errTokenHeader != nil {
+			respondWithError(&w, errTokenHeader)
+			return 
+		}
+
+		userId, errJWT := auth.ValidateJWT(token, cfg.JWTSecret)
+		if errJWT != nil {
+			respondWithError(&w, errJWT)
+			return 
+		}
+
+		userIdHeader := r.PathValue("id")
+		userUUIDHeader, errUUID := uuid.Parse(userIdHeader)
+		if errUUID != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("error parsing uuid: %w, function: %s", 
+					errUUID, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		errCompare := auth.CompareUUIDs(&userId, &userUUIDHeader)
+		if errCompare != nil {
+			respondWithError(&w, errCompare)
+			return 
+		}	
+
+		errDelete := cfg.DB.DeleteUser(r.Context(), userId)
+		if errDelete != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to delete user: %w, fucntion: %s",
+					errDelete,
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+
+			respondWithError(&w, &e)
+			return 
+		}
+
+		respNoContent(&w)
+	}
+
+	return deleteUsersHandler
+}
+
+func postLoginHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	postLoginhandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
 		decoder := json.NewDecoder(r.Body)
 		req := loginPostRequest{}
 		errDecode := decoder.Decode(&req)
 		if errDecode != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to decode request: %w, function: %s", errDecode, errors.GetFunctionName()).Error(),
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to decode request: %w, function: %s", 
+					errDecode, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
 			}
 			respondWithError(&w, &e)
 			return 
 		}
 
-		dbStruct, err := db.LoadDB()
-		if err != nil {
-			respondWithError(&w, err)
-			return 
-		}
-
-		
-		found, userIdx := dbStruct.SearchUserEmail(req.Email)
-		if !found {
-			e := errors.CodedError{
-				Message: fmt.Sprintf("user '%s' not found", req.Email),
-				StatusCode: 404,
-			}
-			respondWithError(&w, &e)
-			return
-		}
-
-		dbStruct.Mux.RLock()
-		pass := dbStruct.Users[userIdx].Password
-		dbStruct.Mux.RUnlock()
-
-		errCompPass := bcrypt.CompareHashAndPassword([]byte(pass), []byte(req.Password))
-		if errCompPass != nil {
-			e := errors.CodedError{
-				Message: "unauthorized access",
-				StatusCode: 401,
+		user, errUser := cfg.DB.FindUserByEmail(r.Context(), req.Email)
+		if errUser != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to find user: %w, function: %s", 
+					errUser, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
 			}
 			respondWithError(&w, &e)
 			return 
 		}
 
-		var expiresInSeconds int
-		if req.ExpiresInSeconds == 0 || req.ExpiresInSeconds > 60*60{
-			expiresInSeconds = 60*60 // max duration of jwt is 1 hour
-		} else {
-			expiresInSeconds = req.ExpiresInSeconds
+		check := auth.CheckPasswordHash(req.Password, user.HashedPassword)
+		if check != nil {
+			respondWithError(&w, check)
+			return 
 		}
-		
-		currTime := time.Now().UTC()
-		token := jwt.NewWithClaims(
-			jwt.SigningMethodHS256,
-			jwt.RegisteredClaims{
-				Issuer: "chirpy",
-				IssuedAt: jwt.NewNumericDate(currTime),
-				ExpiresAt: jwt.NewNumericDate(currTime.Add(time.Duration(expiresInSeconds)*time.Second)),
-				Subject: strconv.Itoa(userIdx),
-			},
-		)
 
-		signedToken, errSign := token.SignedString([]byte(cfg.JwtSecret))
-		if errSign != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to sign jwt: %w, function: %s", errSign, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
+		token, refreshToken, errToken := auth.MakeJWT(user.ID, cfg.JWTSecret)
+		if errToken != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to generate jwt: %w, function: %s", 
+					errToken, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
 			}
 			respondWithError(&w, &e)
-			return
+			return 
 		}
 
-		randomSlice := make([]byte, 32)
-		_, errRand := rand.Read(randomSlice)
-		if errRand != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to generate refresh token: %w, function: %s", errRand, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
+		expiresAt := time.Now().Add(60 * 24 * time.Hour)
+
+		refreshTokensPars := &database.CreateRefreshTokenParams{
+			Token: refreshToken,
+			UserID: user.ID,
+			ExpiresAt: expiresAt.Format("2006-01-02 15:04:05"),
+		}
+
+		_, errRefreshObj := cfg.DB.CreateRefreshToken(r.Context(), *refreshTokensPars)
+		if errRefreshObj != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to generate refresh token object: %w, function: %s", 
+					errRefreshObj, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
 			}
 			respondWithError(&w, &e)
-			return
+			return 
 		}
 
-		dbStruct.Mux.RLock()
-		red := dbStruct.Users[userIdx].IsChirpyRed
-		dbStruct.Mux.RUnlock()
+		u := User{}
+		u.mapUser(&user)
 
-		refreshToken := hex.EncodeToString(randomSlice)
-		user := database.User{
-			Id: userIdx,
-			Email: req.Email,
-			Password: pass,
-			RefreshToken: refreshToken,
-			IsChirpyRed: red,
-
-			// refresh token expires after 60 days and the date is stored as ISO 8601 format
-			RefreshTokenExpiresAt: currTime.Add(60 * 24 * time.Hour).UTC().Format(time.RFC3339),
-		}
-
-		dbStruct.Mux.RLock()
-		dbStruct.Users[userIdx] = user
-		dbStruct.Mux.RUnlock()
-
-		errWriteRefreshExp := db.WriteDB(&dbStruct)
-		if errWriteRefreshExp != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to store refresh token expire time: %w, function: %s", errSign, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
-			}
-			respondWithError(&w, &e)
-			return
-		}
-
-		dbStruct.Mux.Lock()
-		dbStruct.Users[userIdx] = user
-		dbStruct.Mux.Unlock()
-
-		respSuccessfullLoginPost(&w, req.Email, userIdx, signedToken, refreshToken, red)
+		respSuccesfullLoginPost(&w, &u, &token, &refreshToken)
 	}
 
-	return postLoginHandler
+	return postLoginhandler
 }
 
-func putUserhandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
-	putUserHandler := func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type: application/json", "charset=utf-8")
-		decoder := json.NewDecoder(r.Body)
-		req := userPutRequest{}
-		errDecode := decoder.Decode(&req)
-		if errDecode != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to decode request: %w, function: %s", errDecode, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
-			}
-			respondWithError(&w, &e)
-			return 
-		}
-
-		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		tokenObjPtr, errParseToken := jwt.ParseWithClaims(token, &jwt.RegisteredClaims{}, func(*jwt.Token) (interface{}, error) {
-			return []byte(cfg.JwtSecret), nil
-		})
-		if errParseToken != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("invalid token: %w", errParseToken).Error(),
-				StatusCode: 401,
-			}
-			respondWithError(&w, &e)
-			return
-		}
-
-		userIdString, errGetID := tokenObjPtr.Claims.(*jwt.RegisteredClaims).GetSubject()		
-		if errGetID != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("error getting user id: %w, function: %s", errGetID, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
-			}
-			respondWithError(&w, &e)
-			return
-		}
-		
-		userId, errConversion := strconv.Atoi(userIdString)
-		if errConversion != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to convert userId from string to int: %w, function: %s", errConversion, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
-			}
-			respondWithError(&w, &e)
-			return 
-		}
-
-		randomSlice := make([]byte, 32)
-		_, errRand := rand.Read(randomSlice)
-		if errRand != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to generate refresh token: %w, function: %s", errRand, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
-			}
-			respondWithError(&w, &e)
-			return
-		}
-
-		refreshToken := hex.EncodeToString(randomSlice)
-		
-		errUpdate := db.UpdateUser(userId, req.Email, req.Password, refreshToken)
-		if errUpdate != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to update database: %w, function: %s", errUpdate, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
-			}
-			respondWithError(&w, &e)
-			return 
-		}
-		respSuccesfullUserPut(&w, req.Email, userId)
-	}
-
-	return putUserHandler
-}
-
-func postRefreshHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+func postRefreshHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	postRefreshHandler := func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type: application/json", "charset=utf-8")
-		refreshToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		dbStruct, errLoad := db.LoadDB()
-		if errLoad != nil {
-			respondWithError(&w, errLoad)
+		token, errHeader := auth.GetBearerToken(r.Header)
+		if errHeader != nil {
+			respondWithError(&w, errHeader)
+			return
+		}
+
+		tokenObj, errObj := cfg.DB.GetRefreshToken(r.Context(), token)
+		if errObj != nil {
+			e := customErrors.CodedError{
+				Message: "failed to retrieve refresh token from database",
+				StatusCode: http.StatusNotFound,
+			}
+			respondWithError(&w, &e)
 			return 
 		}
-		
-		found := false
-		var userIdx int
-		for i, user := range(dbStruct.Users) {
-			if user.RefreshToken == refreshToken {
-				found = true
-				userIdx = i
-			}
+
+		errValid := auth.CheckValidityRefreshToken(&tokenObj)
+		if errValid != nil {
+			respondWithError(&w, errValid)
+			return 
 		}
 
-		if !found {
-			e := errors.CodedError{
-				Message: "refresh token does not exists",
-				StatusCode: 401,
+		userId, errSearch := cfg.DB.GetUserFromRefreshToken(r.Context(), token)
+		if errSearch != nil {
+			e := customErrors.CodedError{
+				Message: "invalid jwt",
+				StatusCode: http.StatusUnauthorized,
 			}
 			respondWithError(&w, &e)
-			return
-		} 
-		
-		dbStruct.Mux.RLock()
-		expiresAt := dbStruct.Users[userIdx].RefreshTokenExpiresAt
-		dbStruct.Mux.RUnlock()
-
-		expDate, errParse := time.Parse(time.RFC3339, expiresAt)
-		if errParse != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to parse expiration date: %w, function: %s", errParse, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
-			}
-			respondWithError(&w, &e)
-			return
+			return 
 		}
 
-		if time.Now().UTC().After(expDate) {
-			e := errors.CodedError{
-				Message: "refresh token is expired",
-				StatusCode: 401,
-			}
-			respondWithError(&w, &e)
-			return
-		}
-		
-		currTime := time.Now().UTC()
-		token := jwt.NewWithClaims(
-			jwt.SigningMethodHS256,
-			jwt.RegisteredClaims{
-				Issuer: "chirpy",
-				IssuedAt: jwt.NewNumericDate(currTime),
-
-				// new jwt expires after 1 hour
-				ExpiresAt: jwt.NewNumericDate(currTime.Add(time.Duration(60*60)*time.Second)),
-				Subject: strconv.Itoa(userIdx),
-			},
-		)
-
-		signedToken, errSign := token.SignedString([]byte(cfg.JwtSecret))
-		if errSign != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to sign jwt: %w, function: %s", errSign, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
-			}
-			respondWithError(&w, &e)
-			return
+		newToken, refreshToken, errToken := auth.MakeJWT(userId, cfg.JWTSecret)
+		if errToken != nil {
+			respondWithError(&w, errToken)
 		}
 
-		randomSlice := make([]byte, 32)
-		_, errRand := rand.Read(randomSlice)
-		if errRand != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to generate refresh token: %w, function: %s", errRand, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
-			}
-			respondWithError(&w, &e)
-			return
-		}
-
-		newRefreshToken := hex.EncodeToString(randomSlice)
-
-		dbStruct.Mux.RLock()
-		user := dbStruct.Users[userIdx]
-		dbStruct.Mux.RUnlock()
-		
-		user.RefreshToken = newRefreshToken
-		user.RefreshTokenExpiresAt = currTime.Add(60 * 24 * time.Hour).UTC().Format(time.RFC3339)
-
-		dbStruct.Mux.Lock()
-		dbStruct.Users[userIdx] = user
-		dbStruct.Mux.Unlock()
-
-		respondSuccesfullRefreshPost(&w, signedToken, refreshToken)
+		respSuccesfullRefreshPost(&w, newToken, refreshToken)
 	}
 
 	return postRefreshHandler
 }
 
-func postRevokeHandlerWrapped(db *database.DB) func(w http.ResponseWriter, r *http.Request) {
+func postRevokeHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	postRevokeHandler := func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type: application/json", "charset=utf-8")
-		refreshToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		dbStruct, errLoad := db.LoadDB()
-		if errLoad != nil {
-			respondWithError(&w, errLoad)
-			return 
-		}
-		
-		found := false
-		var userIdx int
-		for i, user := range(dbStruct.Users) {
-			if user.RefreshToken == refreshToken {
-				found = true
-				userIdx = i
-			}
+		token, errHeader := auth.GetBearerToken(r.Header)
+		if errHeader != nil {
+			respondWithError(&w, errHeader)
+			return
 		}
 
-		if !found {
-			e := errors.CodedError{
-				Message: "refresh token does not exist",
-				StatusCode: 401,
+		errRevoke := cfg.DB.RevokeToken(r.Context(), token)
+		if errRevoke != nil {
+			e := customErrors.CodedError{
+				Message: "token not in database",
+				StatusCode: http.StatusNotFound,
 			}
 			respondWithError(&w, &e)
-			return
-		} 
-
-		dbStruct.Mux.RLock()
-		email := dbStruct.Users[userIdx].Email
-		pass := dbStruct.Users[userIdx].Password
-		red := dbStruct.Users[userIdx].IsChirpyRed
-		dbStruct.Mux.RUnlock()
-		
-		user := database.User{
-			Id: userIdx,
-			Email: email,
-			Password: pass,
-			RefreshToken: "",
-			RefreshTokenExpiresAt: "",
-			IsChirpyRed: red,
+			return 
 		}
 
-		dbStruct.Mux.Lock()
-		dbStruct.Users[userIdx] = user
-		dbStruct.Mux.Unlock()
-		
-		errWrite := db.WriteDB(&dbStruct)
-		if errWrite != nil {
-			respondWithError(&w, errWrite)
-			return
-		}
-
-		respSuccesfullRevokePost(&w)
+		respNoContent(&w)
 	}
 
-	return postRevokeHandler 
+	return postRevokeHandler
 }
 
-func postPolkaWebhooksHandlerWrapped(db *database.DB, cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
-	postPolkaWebhooksHandler := func(w http.ResponseWriter, r *http.Request) {
+func postPolkaWebhookHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	postPolkaWebhookHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
-		apiKey := strings.TrimPrefix(r.Header.Get("Authorization"), "ApiKey ")
-		if apiKey != cfg.PolkaApiKey {
-			e := errors.CodedError{
-				Message: "invalid api key",
-				StatusCode: 401,
-			}
-			respondWithError(&w, &e)
-			return 
+		headerKey, errKey := auth.GetAPIKey(r.Header)
+		if errKey != nil {
+			respondWithError(&w, errKey)
+			return
 		}
-		
+
+		errCheck := auth.CheckApiKey(&headerKey, &cfg.PolkaKey)
+		if errCheck != nil {
+			respondWithError(&w, errCheck)
+			return
+		}
+
 		decoder := json.NewDecoder(r.Body)
-		req := polkaWebhooksPostRequest{}
+		req := polkaWebhookPostRequest{}
 		errDecode := decoder.Decode(&req)
 		if errDecode != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to decode request: %w, function: %s", errDecode, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to decode request: %w, function: %s", 
+					errDecode, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
 			}
 			respondWithError(&w, &e)
 			return 
 		}
 
 		if req.Event != "user.upgraded" {
-			respSuccesfullPolkaWebhooksPost(&w)
+			respNoContent(&w)
 			return
 		}
 
-		dbStruct, errLoading := db.LoadDB()
-		if errLoading != nil {
-			respondWithError(&w, errLoading)
-			return
-		}
-
-		found, _ := dbStruct.SearchUserId(req.Data.UserId)
-		if !found {
-			e := errors.CodedError{
-				Message: fmt.Sprintf("user_id %d not found", req.Data.UserId),
-				StatusCode: 404,
-			}
-			respondWithError(&w, &e)
-			return
-		}
-
-		errUpdate := db.UpdateSubscription(req.Data.UserId, true)
-		if errUpdate != nil {
-			e := errors.CodedError{
-				Message: fmt.Errorf("failed to update database: %w, function: %s", errUpdate, errors.GetFunctionName()).Error(),
-				StatusCode: 500,
+		userId := &req.Data.UserId
+		_, errSearchUser := cfg.DB.FindUserById(r.Context(), *userId)
+		if errSearchUser != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("user not found: %w, function: %s",
+					errSearchUser, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusNotFound,
 			}
 			respondWithError(&w, &e)
 			return 
 		}
 
-		respSuccesfullPolkaWebhooksPost(&w)
+		errUpgrade := cfg.DB.UpgradeChirpyRed(r.Context(), *userId)
+		if errUpgrade != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to upgrade user to chirpy red, error: %w, function: %s",
+					errDecode, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		respNoContent(&w)
 	}
 
-	return postPolkaWebhooksHandler
+	return postPolkaWebhookHandler
 }
