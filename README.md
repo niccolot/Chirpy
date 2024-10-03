@@ -183,7 +183,7 @@ Once the server is started one can play with it sending HTTP request from a sepa
 
 * `DELETE /api/users/{id}`
 
-    Allows to delete the user correspoinding to `{id}`
+    Allows to delete the user correspoinding to `{id}`. This endpoint will also delete every chirp associated with that user.
 
     #### Request
 
