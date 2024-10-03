@@ -212,3 +212,19 @@ func (q *Queries) GetChirpsFromAuthorDesc(ctx context.Context, userID uuid.UUID)
 	}
 	return items, nil
 }
+
+const updateChirp = `-- name: UpdateChirp :exec
+UPDATE chirps
+SET body = $2, updated_at = NOW()
+WHERE id = $1
+`
+
+type UpdateChirpParams struct {
+	ID   uuid.UUID
+	Body string
+}
+
+func (q *Queries) UpdateChirp(ctx context.Context, arg UpdateChirpParams) error {
+	_, err := q.db.ExecContext(ctx, updateChirp, arg.ID, arg.Body)
+	return err
+}

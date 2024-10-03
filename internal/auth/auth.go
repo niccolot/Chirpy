@@ -43,7 +43,7 @@ func CheckPasswordHash(password string, hash string) *customErrors.CodedError {
 	return nil
 }
 
-func MakeJWT(userID uuid.UUID, tokenSecret string) (string, *customErrors.CodedError) {
+func MakeJWT(userID uuid.UUID, tokenSecret string) (string, string, *customErrors.CodedError) {
 	currTime := time.Now().UTC()
 	expiresIn := 60*60 // 1 hour jwt duration
 	token := jwt.NewWithClaims(
@@ -65,10 +65,22 @@ func MakeJWT(userID uuid.UUID, tokenSecret string) (string, *customErrors.CodedE
 			StatusCode: http.StatusInternalServerError,
 		}
 		
-		return "", &e
+		return "", "", &e
 	}
 
-	return signedToken, nil
+	refreshToken, errRefresh := MakeRefreshToken()
+	if errRefresh != nil {
+		e := customErrors.CodedError{
+			Message: fmt.Errorf("failed to generate refresh token: %w, function: %s", 
+				errRefresh, 
+				customErrors.GetFunctionName()).Error(),
+			StatusCode: http.StatusInternalServerError,
+		}
+		
+		return "", "", &e
+	}
+
+	return signedToken, refreshToken, nil
 }
 
 func ValidateJWT(tokenString string, tokenSecret string) (uuid.UUID, *customErrors.CodedError) {

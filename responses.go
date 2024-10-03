@@ -44,6 +44,7 @@ type respSuccLoginPostData struct {
 
 type respSuccRefreshPostData struct {
 	Token string `json:"token"`
+	RefreshToken string `json:"refresh_token"`
 }
 
 func respondWithError(w *http.ResponseWriter, err *customErrors.CodedError) {
@@ -78,6 +79,18 @@ func respSuccesfullChirpPost(w *http.ResponseWriter, chirp *Chirp) {
 	(*w).Write(dat)
 }
 
+func respSuccesfullChirpPut(w *http.ResponseWriter, chirp *Chirp) {
+	dat, errMarshal := json.Marshal(chirp)
+	if errMarshal != nil {
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
+	}
+
+	(*w).WriteHeader(http.StatusOK)
+	(*w).Header().Set("Content-Type", "application/json")
+	(*w).Write(dat)
+}
+
 func respSuccesfullChirpsAllGet(w *http.ResponseWriter, chirps []Chirp) {
 	dat, errMarshal := json.Marshal(chirps)
 	if errMarshal != nil {
@@ -100,10 +113,6 @@ func respSuccesfullChirpsGet(w *http.ResponseWriter, chirp *Chirp) {
 	(*w).WriteHeader(http.StatusOK)
 	(*w).Header().Set("Content-Type", "application/json")
 	(*w).Write(dat)
-}
-
-func respSuccesfullChirpDelete(w *http.ResponseWriter) {
-	(*w).WriteHeader(http.StatusNoContent)
 }
 
 func respSuccesfullUserPost(w *http.ResponseWriter, user *User) {
@@ -168,9 +177,10 @@ func respSuccesfullLoginPost(w *http.ResponseWriter, user *User, jwt *string, re
 	(*w).Write(dat)
 }
 
-func respSuccesfullRefreshPost(w *http.ResponseWriter, token string) {
+func respSuccesfullRefreshPost(w *http.ResponseWriter, token string, refreshToken string) {
 	respStruct := respSuccRefreshPostData{
 		Token: token,
+		RefreshToken: refreshToken,
 	}
 
 	dat, errMarshal := json.Marshal(respStruct)

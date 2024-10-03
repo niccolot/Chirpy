@@ -150,7 +150,7 @@ func getAllChirpsHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *h
 
 		var authorId uuid.UUID
 		var errUUID error
-		
+
 		if authorIdString != "" {
 			authorId, errUUID = uuid.Parse(authorIdString)
 			if errUUID != nil {
@@ -306,10 +306,94 @@ func deleteChirpsHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *h
 			return 
 		}
 
-		respSuccesfullChirpDelete(&w)
+		respNoContent(&w)
 	}
 
 	return deleteChirpsHandler
+}
+
+func putChirpsHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	putChirpsHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		token, errTokenHeader := auth.GetBearerToken(r.Header)
+		if errTokenHeader != nil {
+			respondWithError(&w, errTokenHeader)
+			return 
+		}
+
+		userId, errJWT := auth.ValidateJWT(token, cfg.JWTSecret)
+		if errJWT != nil {
+			respondWithError(&w, errJWT)
+			return 
+		}
+
+		decoder := json.NewDecoder(r.Body)
+		req := chirpPutRequest{}
+		errDecode := decoder.Decode(&req)
+		if errDecode != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to decode request: %w, function: %s", 
+					errDecode, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		chirp, errChirp := cfg.DB.GetChirp(r.Context(), req.ChirpId)
+		if errChirp != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to get chirps: %w, function: %s", 
+					errChirp, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		errCompare := auth.CompareUUIDs(&userId, &chirp.UserID)
+		if errCompare != nil {
+			respondWithError(&w, errCompare)
+			return 
+		}
+
+		updateChirpParams := &database.UpdateChirpParams{
+			ID: req.ChirpId,
+			Body: req.Body,
+		}
+
+		errUpdate := cfg.DB.UpdateChirp(r.Context(), *updateChirpParams)
+		if errUpdate != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to update chirp: %w, function: %s", 
+					errUpdate, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+		}
+
+		chirp, errFind := cfg.DB.GetChirp(r.Context(), chirp.ID)
+		if errFind != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to retrieve updated chirp: %w, function: %s", 
+					errFind, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		c := Chirp{}
+		c.mapChirp(&chirp)
+
+		respSuccesfullChirpPut(&w, &c)
+	}
+
+	return putChirpsHandler
 }
 
 func postUsersHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
@@ -439,6 +523,59 @@ func putUsersHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.
 	return putUsersHandlerWrapped
 }
 
+func deleteUsersHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	deleteUsersHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		token, errTokenHeader := auth.GetBearerToken(r.Header)
+		if errTokenHeader != nil {
+			respondWithError(&w, errTokenHeader)
+			return 
+		}
+
+		userId, errJWT := auth.ValidateJWT(token, cfg.JWTSecret)
+		if errJWT != nil {
+			respondWithError(&w, errJWT)
+			return 
+		}
+
+		userIdHeader := r.PathValue("id")
+		userUUIDHeader, errUUID := uuid.Parse(userIdHeader)
+		if errUUID != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("error parsing uuid: %w, function: %s", 
+					errUUID, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		errCompare := auth.CompareUUIDs(&userId, &userUUIDHeader)
+		if errCompare != nil {
+			respondWithError(&w, errCompare)
+			return 
+		}	
+
+		errDelete := cfg.DB.DeleteUser(r.Context(), userId)
+		if errDelete != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to delete user: %w, fucntion: %s",
+					errDelete,
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+
+			respondWithError(&w, &e)
+			return 
+		}
+
+		respNoContent(&w)
+	}
+
+	return deleteUsersHandler
+}
+
 func postLoginHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	postLoginhandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
@@ -474,7 +611,7 @@ func postLoginHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http
 			return 
 		}
 
-		token, errToken := auth.MakeJWT(user.ID, cfg.JWTSecret)
+		token, refreshToken, errToken := auth.MakeJWT(user.ID, cfg.JWTSecret)
 		if errToken != nil {
 			e := customErrors.CodedError{
 				Message: fmt.Errorf("failed to generate jwt: %w, function: %s", 
@@ -486,22 +623,10 @@ func postLoginHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http
 			return 
 		}
 
-		refreshTokenString, errRefresh := auth.MakeRefreshToken()
-		if errRefresh != nil {
-			e := customErrors.CodedError{
-				Message: fmt.Errorf("failed to generate refresh token string: %w, function: %s", 
-					errRefresh, 
-					customErrors.GetFunctionName()).Error(),
-				StatusCode: http.StatusInternalServerError,
-			}
-			respondWithError(&w, &e)
-			return 
-		}
-
 		expiresAt := time.Now().Add(60 * 24 * time.Hour)
 
 		refreshTokensPars := &database.CreateRefreshTokenParams{
-			Token: refreshTokenString,
+			Token: refreshToken,
 			UserID: user.ID,
 			ExpiresAt: expiresAt.Format("2006-01-02 15:04:05"),
 		}
@@ -521,7 +646,7 @@ func postLoginHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http
 		u := User{}
 		u.mapUser(&user)
 
-		respSuccesfullLoginPost(&w, &u, &token, &refreshTokenString)
+		respSuccesfullLoginPost(&w, &u, &token, &refreshToken)
 	}
 
 	return postLoginhandler
@@ -561,12 +686,12 @@ func postRefreshHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *ht
 			return 
 		}
 
-		newToken, errToken := auth.MakeJWT(userId, cfg.JWTSecret)
+		newToken, refreshToken, errToken := auth.MakeJWT(userId, cfg.JWTSecret)
 		if errToken != nil {
 			respondWithError(&w, errToken)
 		}
 
-		respSuccesfullRefreshPost(&w, newToken)
+		respSuccesfullRefreshPost(&w, newToken, refreshToken)
 	}
 
 	return postRefreshHandler

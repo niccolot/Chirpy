@@ -7,6 +7,11 @@ type chirpPostRequest struct {
 	UserId uuid.UUID `json:"user_id"`
 }
 
+type chirpPutRequest struct {
+	ChirpId uuid.UUID `json:"id"`
+	Body string `json:"body"`
+}
+
 type userPostRequest struct {
 	Email string `json:"email"`
 	Password string `json:"password"`

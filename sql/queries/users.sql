@@ -29,3 +29,7 @@ WHERE id = $1;
 UPDATE users
 SET is_chirpy_red = true
 WHERE id = $1;
+
+-- name: DeleteUser :exec
+DELETE FROM users
+WHERE id = $1;

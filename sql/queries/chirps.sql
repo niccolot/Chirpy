@@ -35,3 +35,8 @@ WHERE id = $1;
 -- name: DeleteChirp :exec
 DELETE from chirps
 WHERE id = $1 AND user_id = $2;
+
+-- name: UpdateChirp :exec
+UPDATE chirps
+SET body = $2, updated_at = NOW()
+WHERE id = $1;
