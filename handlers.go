@@ -561,6 +561,18 @@ func postRevokeHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *htt
 func postPolkaWebhookHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	postPolkaWebhookHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		headerKey, errKey := auth.GetAPIKey(r.Header)
+		if errKey != nil {
+			respondWithError(&w, errKey)
+			return
+		}
+
+		errCheck := auth.CheckApiKey(&headerKey, &cfg.PolkaKey)
+		if errCheck != nil {
+			respondWithError(&w, errCheck)
+			return
+		}
+
 		decoder := json.NewDecoder(r.Body)
 		req := polkaWebhookPostRequest{}
 		errDecode := decoder.Decode(&req)

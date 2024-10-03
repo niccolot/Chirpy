@@ -204,3 +204,16 @@ func GetAPIKey(headers http.Header) (string, *customErrors.CodedError) {
 
 	return key, nil
 }
+
+func CheckApiKey(key1 *string, key2 *string) *customErrors.CodedError {
+	if *key1 != *key2 {
+		e := &customErrors.CodedError{
+			Message: "invalid key",
+			StatusCode: http.StatusUnauthorized,
+		}
+
+		return e
+	}
+
+	return nil
+}
