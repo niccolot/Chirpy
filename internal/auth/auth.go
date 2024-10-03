@@ -132,7 +132,7 @@ func GetBearerToken(headers http.Header) (string, *customErrors.CodedError) {
 	if token == "" {
 		e := customErrors.CodedError{
 			Message: "request header must contain the jwt",
-			StatusCode: http.StatusBadRequest,
+			StatusCode: http.StatusUnauthorized,
 		}
 
 		return "", &e
@@ -160,9 +160,33 @@ func MakeRefreshToken() (string, *customErrors.CodedError) {
 		return refreshToken, nil
 }
 
-func CheckValidityRefreshToken(tokenObj *database.RefreshToken) bool {
+func CheckValidityRefreshToken(tokenObj *database.RefreshToken) *customErrors.CodedError {
 	notExpired := time.Now().Format("2006-01-02 15:04:05") <= tokenObj.ExpiresAt
 	notRevoked :=  !tokenObj.RevokedAt.Valid
-	
-	return notExpired && notRevoked  
+
+	valid := notExpired && notRevoked
+
+	if !valid {
+		e := &customErrors.CodedError{
+			Message: "invalid refresh token",
+			StatusCode: http.StatusUnauthorized,
+		}
+
+		return e
+	}
+
+	return nil
 } 
+
+func CompareUUIDs(uuid1 *uuid.UUID, uuid2 *uuid.UUID) *customErrors.CodedError {
+	if *uuid1 != *uuid2 {
+		e := &customErrors.CodedError{
+			Message: "invalid user",
+			StatusCode: http.StatusForbidden,
+		}
+
+		return e
+	}
+
+	return nil
+}

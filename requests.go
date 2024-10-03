@@ -12,6 +12,11 @@ type userPostRequest struct {
 	Password string `json:"password"`
 }
 
+type userPutRequest struct {
+	Email string `json:"email"`
+	Password string `json:"password"`
+}
+
 type loginPostRequest struct {
 	Email string `json:"email"`
 	Password string `json:"password"`

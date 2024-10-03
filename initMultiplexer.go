@@ -14,7 +14,9 @@ func initMultiplexer(mux *http.ServeMux, cfg *apiConfig) {
 	mux.HandleFunc("POST /api/chirps", postChirphandlerWrapped(cfg))
 	mux.HandleFunc("GET /api/chirps", getAllChirpsHandlerWrapped(cfg))
 	mux.HandleFunc("GET /api/chirps/{id}", getChirspHandlerWrapped(cfg))
+	mux.HandleFunc("DELETE /api/chirps/{id}", deleteChirpsHandlerWrapped(cfg))
 	mux.HandleFunc("POST /api/login", postLoginHandlerWrapped(cfg))
 	mux.HandleFunc("POST /api/refresh", postRefreshHandlerWrapped(cfg))
 	mux.HandleFunc("POST /api/revoke", postRevokeHandlerWrapped(cfg))
+	mux.HandleFunc("PUT /api/users", putUsersHandlerWrapped(cfg))
 }

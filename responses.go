@@ -23,6 +23,13 @@ type respSuccUserPostData struct {
 	Email string `json:"email"`
 }
 
+type respSuccUserPutData struct {
+	Id uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email string `json:"email"`
+}
+
 type respSuccLoginPostData struct {
 	Id        uuid.UUID `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
@@ -92,6 +99,10 @@ func respSuccesfullChirpsGet(w *http.ResponseWriter, chirp *Chirp) {
 	(*w).Write(dat)
 }
 
+func respSuccesfullChirpDelete(w *http.ResponseWriter) {
+	(*w).WriteHeader(http.StatusNoContent)
+}
+
 func respSuccesfullUserPost(w *http.ResponseWriter, user *User) {
 	respStruct := respSuccUserPostData{
 		Id: user.Id,
@@ -107,6 +118,25 @@ func respSuccesfullUserPost(w *http.ResponseWriter, user *User) {
 	}
 
 	(*w).WriteHeader(http.StatusCreated)
+	(*w).Header().Set("Content-Type", "application/json")
+	(*w).Write(dat)
+}
+
+func respSuccesfullUserPut(w *http.ResponseWriter, user *User) {
+	respStruct := respSuccUserPutData{
+		Id: user.Id,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email: user.Email,
+	}
+
+	dat, errMarshal := json.Marshal(respStruct)
+	if errMarshal != nil {
+		customErrors.ErrorMarshal(w, errMarshal)
+		return 
+	}
+
+	(*w).WriteHeader(http.StatusOK)
 	(*w).Header().Set("Content-Type", "application/json")
 	(*w).Write(dat)
 }

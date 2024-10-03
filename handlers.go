@@ -205,6 +205,75 @@ func getChirspHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http
 	return getChirpsHandler
 }
 
+func deleteChirpsHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	deleteChirpsHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		token, errTokenHeader := auth.GetBearerToken(r.Header)
+		if errTokenHeader != nil {
+			respondWithError(&w, errTokenHeader)
+			return 
+		}
+
+		userId, errJWT := auth.ValidateJWT(token, cfg.JWTSecret)
+		if errJWT != nil {
+			respondWithError(&w, errJWT)
+			return 
+		}
+
+		chirpId := r.PathValue("id")
+		chirpUUID, errUUID := uuid.Parse(chirpId)
+		if errUUID != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("error parsing uuid: %w, function: %s", 
+					errUUID, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		chirp, errFindChirp := cfg.DB.GetChirp(r.Context(), chirpUUID)
+		if errFindChirp != nil {
+			e := customErrors.CodedError{
+				Message: "chirp not found",
+				StatusCode: http.StatusNotFound,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		errCompare := auth.CompareUUIDs(&userId, &chirp.UserID)
+		if errCompare != nil {
+			respondWithError(&w, errCompare)
+			return 
+		}	
+		
+		delChirpParams := &database.DeleteChirpParams{
+			ID: chirp.ID,
+			UserID: userId,
+		}
+
+		errDelete := cfg.DB.DeleteChirp(r.Context(), *delChirpParams)
+		if errDelete != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to delete chirp %s: %w, fucntion: %s",
+					string(chirpId),
+					errDelete,
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+
+			respondWithError(&w, &e)
+			return 
+		}
+
+		respSuccesfullChirpDelete(&w)
+	}
+
+	return deleteChirpsHandler
+}
+
 func postUsersHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	postUsersHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
@@ -252,6 +321,84 @@ func postUsersHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http
 	}
 
 	return postUsersHandler
+}
+
+func putUsersHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	putUsersHandlerWrapped := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		token, errTokenHeader := auth.GetBearerToken(r.Header)
+		if errTokenHeader != nil {
+			respondWithError(&w, errTokenHeader)
+			return 
+		}
+
+		userId, errJWT := auth.ValidateJWT(token, cfg.JWTSecret)
+		if errJWT != nil {
+			respondWithError(&w, errJWT)
+			return 
+		}
+
+		decoder := json.NewDecoder(r.Body)
+		req := userPutRequest{}
+		errDecode := decoder.Decode(&req)
+		if errDecode != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to decode request: %w, function: %s", 
+					errDecode, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		hashedPassword, errHash := auth.HashPassword(req.Password)
+		if errHash != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to hash new password: %w, function: %s", 
+					errHash, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+		}
+
+		updateUserPars := &database.UpdateUserParams{
+			ID: userId,
+			Email: req.Email,
+			HashedPassword: hashedPassword,
+		}
+
+		errUpdate := cfg.DB.UpdateUser(r.Context(), *updateUserPars)
+		if errUpdate != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to update user: %w, function: %s", 
+					errUpdate, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+		}
+
+		user, errUser := cfg.DB.FindUserByEmail(r.Context(), req.Email)
+		if errUser != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to retrieve updated user: %w, function: %s", 
+					errUser, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		u := User{}
+		u.mapUser(&user)
+
+		respSuccesfullUserPut(&w, &u)
+	}
+
+	return putUsersHandlerWrapped
 }
 
 func postLoginHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
@@ -360,13 +507,9 @@ func postRefreshHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *ht
 			return 
 		}
 
-		valid := auth.CheckValidityRefreshToken(&tokenObj)
-		if !valid {
-			e := customErrors.CodedError{
-				Message: "invalid refresh token",
-				StatusCode: http.StatusUnauthorized,
-			}
-			respondWithError(&w, &e)
+		errValid := auth.CheckValidityRefreshToken(&tokenObj)
+		if errValid != nil {
+			respondWithError(&w, errValid)
 			return 
 		}
 
@@ -413,4 +556,12 @@ func postRevokeHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *htt
 	}
 
 	return postRevokeHandler
+}
+
+func postPolkaWebhookHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	postPolkaWebhookHandler := func(w http.ResponseWriter, r *http.Request) {
+		
+	}
+
+	return postPolkaWebhookHandler
 }
