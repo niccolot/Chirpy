@@ -145,7 +145,45 @@ func postChirphandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http
 func getAllChirpsHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	getAllChirpsHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type: application/json", "charset=utf-8")
-		chirpsArr, errChirps := cfg.DB.GetAllChirps(r.Context())
+		authorIdString := r.URL.Query().Get("author_id")
+		sorting := r.URL.Query().Get("sort")
+
+		var authorId uuid.UUID
+		var errUUID error
+		
+		if authorIdString != "" {
+			authorId, errUUID = uuid.Parse(authorIdString)
+			if errUUID != nil {
+				e := customErrors.CodedError{
+					Message: fmt.Errorf("error parsing uuid: %w, function: %s", 
+						errUUID, 
+						customErrors.GetFunctionName()).Error(),
+					StatusCode: http.StatusInternalServerError,
+				}
+				respondWithError(&w, &e)
+				return 
+			}
+		}
+		
+
+		var chirpsArr []database.Chirp
+		var errChirps error
+
+		_, errSearchUser := cfg.DB.FindUserById(r.Context(), authorId)
+		if errSearchUser != nil || authorIdString == "" {
+			if sorting == "desc" {
+				chirpsArr, errChirps = cfg.DB.GetAllChirpsDesc(r.Context())
+			} else { // ASC is default option
+				chirpsArr, errChirps = cfg.DB.GetAllChirpsAsc(r.Context())
+			}
+		} else {
+			if sorting == "desc" {
+				chirpsArr, errChirps = cfg.DB.GetChirpsFromAuthorDesc(r.Context(), authorId)
+			} else {
+				chirpsArr, errChirps = cfg.DB.GetChirpsFromAuthorAsc(r.Context(), authorId)
+			}
+		}
+
 		if errChirps != nil {
 			e := customErrors.CodedError{
 				Message: fmt.Errorf("failed to get chirps: %w, function: %s", 
