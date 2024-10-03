@@ -21,3 +21,12 @@ type loginPostRequest struct {
 	Email string `json:"email"`
 	Password string `json:"password"`
 }
+
+type polkaWebhookPostRequest struct {
+	Event string `json:"event"`
+	Data polkaWebhookData `json:"data"`
+}
+
+type polkaWebhookData struct {
+	UserId uuid.UUID `json:"user_id"`
+}

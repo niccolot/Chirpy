@@ -18,6 +18,7 @@ type apiConfig struct {
 	FileserverHits atomic.Int32
 	Platform string
 	JWTSecret string
+	PolkaKey string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -49,6 +50,8 @@ func NewAPIConfig(db *sql.DB) (*apiConfig, *customErrors.CodedError) {
 	cfg.Platform = platform
 	secret := os.Getenv("JWT_SECRET")
 	cfg.JWTSecret = secret
+	polkaKey := os.Getenv("POLKA_API_KEY")
+	cfg.PolkaKey = polkaKey
 
 	return cfg, nil
 }

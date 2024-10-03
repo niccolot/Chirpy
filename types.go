@@ -14,6 +14,7 @@ type User struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string `json:"email"`
 	HashedPassword string `json:"hashed_password"`
+	IsChirpyred bool `json:"is_chirpy_red"`
 }
 
 func (u *User) mapUser(user *database.User) {
@@ -22,6 +23,7 @@ func (u *User) mapUser(user *database.User) {
 	u.UpdatedAt = user.UpdatedAt
 	u.Email = user.Email
 	u.HashedPassword = user.HashedPassword
+	u.IsChirpyred = user.IsChirpyRed.Bool
 }
 
 type TemplateData struct {

@@ -190,3 +190,17 @@ func CompareUUIDs(uuid1 *uuid.UUID, uuid2 *uuid.UUID) *customErrors.CodedError {
 
 	return nil
 }
+
+func GetAPIKey(headers http.Header) (string, *customErrors.CodedError) {
+	key := strings.TrimPrefix(headers.Get("Authorization"), "ApiKey ")
+	if key == "" {
+		e := customErrors.CodedError{
+			Message: "request header must contain the polka api key",
+			StatusCode: http.StatusUnauthorized,
+		}
+
+		return "", &e
+	}
+
+	return key, nil
+}

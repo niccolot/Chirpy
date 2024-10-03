@@ -552,7 +552,7 @@ func postRevokeHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *htt
 			return 
 		}
 
-		respSuccesfullRevokePost(&w)
+		respNoContent(&w)
 	}
 
 	return postRevokeHandler
@@ -560,7 +560,52 @@ func postRevokeHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *htt
 
 func postPolkaWebhookHandlerWrapped(cfg *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	postPolkaWebhookHandler := func(w http.ResponseWriter, r *http.Request) {
-		
+		w.Header().Set("Content-Type: application/json", "charset=utf-8")
+		decoder := json.NewDecoder(r.Body)
+		req := polkaWebhookPostRequest{}
+		errDecode := decoder.Decode(&req)
+		if errDecode != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to decode request: %w, function: %s", 
+					errDecode, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		if req.Event != "user.upgraded" {
+			respNoContent(&w)
+			return
+		}
+
+		userId := &req.Data.UserId
+		_, errSearchUser := cfg.DB.FindUserById(r.Context(), *userId)
+		if errSearchUser != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("user not found: %w, function: %s",
+					errSearchUser, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusNotFound,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		errUpgrade := cfg.DB.UpgradeChirpyRed(r.Context(), *userId)
+		if errUpgrade != nil {
+			e := customErrors.CodedError{
+				Message: fmt.Errorf("failed to upgrade user to chirpy red, error: %w, function: %s",
+					errDecode, 
+					customErrors.GetFunctionName()).Error(),
+				StatusCode: http.StatusInternalServerError,
+			}
+			respondWithError(&w, &e)
+			return 
+		}
+
+		respNoContent(&w)
 	}
 
 	return postPolkaWebhookHandler

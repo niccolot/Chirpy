@@ -19,4 +19,5 @@ func initMultiplexer(mux *http.ServeMux, cfg *apiConfig) {
 	mux.HandleFunc("POST /api/refresh", postRefreshHandlerWrapped(cfg))
 	mux.HandleFunc("POST /api/revoke", postRevokeHandlerWrapped(cfg))
 	mux.HandleFunc("PUT /api/users", putUsersHandlerWrapped(cfg))
+	mux.HandleFunc("POST /api/polka/webhooks", postPolkaWebhookHandlerWrapped(cfg))
 }

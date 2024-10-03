@@ -21,6 +21,7 @@ type respSuccUserPostData struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email string `json:"email"`
+	IsChirpyRed bool `json:"is_chirpy_red"`
 }
 
 type respSuccUserPutData struct {
@@ -28,6 +29,7 @@ type respSuccUserPutData struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email string `json:"email"`
+	IsChirpyRed bool `json:"is_chirpy_red"`
 }
 
 type respSuccLoginPostData struct {
@@ -37,6 +39,7 @@ type respSuccLoginPostData struct {
 	Email     string `json:"email"`
 	Token string `json:"token"`
 	RefreshToken string `json:"refresh_token"`
+	IsChirpyRed bool `json:"is_chirpy_red"`
 }
 
 type respSuccRefreshPostData struct {
@@ -109,6 +112,7 @@ func respSuccesfullUserPost(w *http.ResponseWriter, user *User) {
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 		Email: user.Email,
+		IsChirpyRed: user.IsChirpyred,
 	}
 
 	dat, errMarshal := json.Marshal(respStruct)
@@ -128,6 +132,7 @@ func respSuccesfullUserPut(w *http.ResponseWriter, user *User) {
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 		Email: user.Email,
+		IsChirpyRed: user.IsChirpyred,
 	}
 
 	dat, errMarshal := json.Marshal(respStruct)
@@ -149,6 +154,7 @@ func respSuccesfullLoginPost(w *http.ResponseWriter, user *User, jwt *string, re
 		Email: user.Email,
 		Token: *jwt,
 		RefreshToken: *refreshToken,
+		IsChirpyRed: user.IsChirpyred,
 	}
 
 	dat, errMarshal := json.Marshal(respStruct)
@@ -178,6 +184,6 @@ func respSuccesfullRefreshPost(w *http.ResponseWriter, token string) {
 	(*w).Write(dat)
 }
 
-func respSuccesfullRevokePost(w *http.ResponseWriter) {
+func respNoContent(w *http.ResponseWriter) {
 	(*w).WriteHeader(http.StatusNoContent)
 }
